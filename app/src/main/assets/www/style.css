@@ -1,0 +1,1329 @@
+:root {
+  --bg-primary: #0f172a;
+  --bg-card: #1e293b;
+  --text-primary: #f8fafc;
+  --accent-color: #10b981;
+}
+html {
+  background-color: #000;
+}
+body {
+  background-color: transparent;
+  color: var(--text-primary);
+  font-family: "Outfit", "Plus Jakarta Sans", sans-serif;
+  overflow-x: hidden;
+  margin: 0;
+  position: relative;
+}
+#bg-canvas {
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: -5;
+}
+#ui-layer {
+  position: fixed;
+  bottom: 80px;
+  left: 20px;
+  z-index: -4;
+  pointer-events: none;
+  text-shadow: 0 0 5px lime;
+  opacity: 0.7;
+  font-family: "Courier New", Courier, monospace;
+  color: lime;
+}
+.scanlines {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: linear-gradient(to bottom, #fff0 50%, rgb(0 0 0 / 0.25) 50%);
+  background-size: 100% 4px;
+  z-index: -3;
+  pointer-events: none;
+}
+.vignette {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle, #fff0 55%, rgb(0 10 0 / 0.95) 100%);
+  z-index: -2;
+  pointer-events: none;
+}
+.sidebar {
+  width: 250px;
+  background: rgb(30 41 59 / 0.85);
+  backdrop-filter: none !important;
+  border-right: 1px solid #334155;
+  height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  transition: transform 0.3s;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 600;
+  -webkit-tap-highlight-color: transparent !important;
+  outline: none !important;
+}
+@media (hover: hover) {
+  .nav-item:hover {
+    background: rgb(255 255 255 / 0.05);
+    color: #fff;
+  }
+  button:hover {
+    filter: brightness(1.1);
+  }
+  .hover-card:hover {
+    background-color: #334155;
+    transform: scale(0.98);
+  }
+}
+.nav-item.active {
+  background: linear-gradient(90deg, rgb(16 185 129 / 0.2) 0%, #fff0 100%);
+  color: var(--accent-color);
+  border-left: 3px solid var(--accent-color);
+}
+.main-content {
+  margin-left: 250px;
+  padding: 20px;
+  min-height: 100vh;
+  width: calc(100% - 250px);
+  padding-bottom: 80px;
+}
+.bottom-nav {
+  display: none;
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: rgb(30 41 59 / 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid #334155;
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
+  padding-bottom: max(10px, env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 20px rgb(0 0 0 / 0.3);
+}
+.bottom-nav-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  width: 100%;
+  padding: 0 5px;
+}
+.bottom-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: #94a3b8;
+  gap: 4px;
+  padding: 8px 0;
+  border-radius: 8px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+.bottom-nav-item i {
+  font-size: 1.1rem;
+  margin-bottom: 2px;
+  transition: transform 0.2s;
+}
+.bottom-nav-item.active {
+  color: #34d399;
+}
+.bottom-nav-item.active i {
+  transform: translateY(-2px);
+  filter: drop-shadow(0 0 5px rgb(52 211 153 / 0.5));
+}
+.bottom-nav-item:active {
+  background-color: rgb(255 255 255 / 0.1);
+  transform: scale(0.9);
+}
+.bottom-nav-item.active::after {
+  content: "";
+  position: absolute;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  background-color: #34d399;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #34d399;
+}
+.mobile-footer-text {
+  font-size: 0.6rem;
+  color: #475569;
+  width: 100%;
+  text-align: center;
+  border-top: 1px solid #334155;
+  padding-top: 4px;
+  background: #0f172a;
+}
+.page-section {
+  display: none;
+}
+.page-section.active-page {
+  display: block;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 768px) {
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  .main-content {
+    margin-left: 0;
+    width: 100%;
+    padding: 0 0 140px 0 !important;
+  }
+  .global-footer {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border-top: 1px solid rgb(255 255 255 / 0.1);
+    padding: 12px 0 !important;
+    z-index: 50;
+    background: rgb(15 23 42 / 0.95);
+    backdrop-filter: blur(10px);
+  }
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  .bottom-nav {
+    display: flex;
+    z-index: 60;
+  }
+}
+.camera-box {
+  position: relative;
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 4/3;
+  margin: 0 auto;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #000;
+  border: 2px solid #334155;
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.camera-box video,
+.camera-box canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 14px;
+}
+#bg-canvas {
+  transform: none;
+  border-radius: 0;
+}
+.error-overlay,
+.warning-overlay {
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(4px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+.error-overlay {
+  background: rgb(220 38 38 / 0.95);
+}
+.warning-overlay {
+  background: rgb(234 88 12 / 0.95);
+}
+.active-overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+#flash-overlay {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  z-index: 40;
+  opacity: 0;
+  pointer-events: none;
+  transition: 0.3s;
+}
+body.flash-active #flash-overlay {
+  opacity: 0.85;
+}
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  /* GANTI z-index: 50 MENJADI 10005 agar di atas tombol mic (z-2000) */
+  z-index: 10005 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.3s ease,
+    visibility 0.3s ease;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: opacity, visibility;
+}
+
+.modal-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+/* UPDATE BAGIAN INI DI STYLE.CSS */
+.modal-box {
+  background: #1e293b;
+  border: 1px solid #475569;
+  padding: 24px;
+  border-radius: 16px;
+
+  /* SETTINGAN AGAR ADA JARAK KIRI KANAN DI HP */
+  width: 90%;
+  max-width: 360px;
+  margin: 0 auto; /* Posisi tengah */
+
+  text-align: center;
+  transform: scale(0.9);
+  transition: transform 0.2s;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.5);
+}
+.modal-overlay.active .modal-box {
+  transform: scale(1);
+}
+@keyframes scan {
+  0% {
+    top: 0%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+@keyframes wave {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-10deg);
+  }
+  75% {
+    transform: rotate(10deg);
+  }
+}
+.animate-wave {
+  animation: wave 1.5s infinite ease-in-out;
+}
+.sensor-card {
+  background: #1e293b;
+  border-radius: 20px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+  border: 1px solid rgb(255 255 255 / 0.05);
+}
+.sensor-value {
+  font-size: 4rem;
+  font-weight: 600;
+  line-height: 1;
+}
+.temp-color {
+  color: #f43f5e;
+}
+.hum-color {
+  color: #38bdf8;
+}
+.mqtt-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #ef4444;
+  box-shadow: 0 0 10px #ef4444;
+  transition: 0.3s;
+}
+.connected .mqtt-dot {
+  background-color: #22c55e;
+  box-shadow: 0 0 10px #22c55e;
+}
+.glass {
+  background: rgb(30 41 59 / 0.6);
+  /* backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px); */
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 1rem;
+}
+#mapContainer.fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3000;
+  height: 100vh !important;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  background: #000;
+}
+#mapContainer.fullscreen #map {
+  border-radius: 0;
+}
+.calendar-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 10px;
+}
+.hourly-scroll {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+.hourly-item {
+  flex: 0 0 auto;
+  width: 70px !important; /* Lebar Tetap */
+  height: 70px !important; /* Tinggi Tetap (Sama dengan lebar) */
+  aspect-ratio: 1 / 1; /* Rasio 1:1 */
+  background: rgb(255 255 255 / 0.05);
+  border-radius: 16px;
+  padding: 5px;
+  text-align: center;
+  border: 1px solid rgb(255 255 255 / 0.05);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden; /* Pastikan isi tidak meluber keluar kotak */
+}
+/* --- BARU: CALENDAR GRID AGAR STRICT PERSEGI --- */
+.calendar-square-fix {
+  width: 100% !important;
+  aspect-ratio: 1 / 1 !important; /* Paksa rasio 1:1 */
+  height: auto !important; /* Tinggi mengikuti rasio lebar */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+}
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #fff0;
+}
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 10px;
+}
+.global-footer {
+  text-align: center;
+  padding: 15px 0;
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  left: 250px;
+  z-index: 50;
+  border-top: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(15 23 42 / 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 -4px 20px rgb(0 0 0 / 0.4);
+}
+.footer-text {
+  font-size: 0.75rem;
+  color: #64748b;
+  font-family: "Outfit", sans-serif;
+  letter-spacing: 1px;
+}
+.footer-highlight {
+  color: #10b981;
+  font-weight: 700;
+  text-shadow: 0 0 10px rgb(16 185 129 / 0.3);
+  display: inline-block;
+  position: relative;
+}
+.footer-line {
+  width: 50px;
+  height: 2px;
+  background: #34d399;
+  margin: 8px auto 0;
+  border-radius: 2px;
+  animation: expandLine 3s ease-in-out infinite;
+  opacity: 0.7;
+}
+@keyframes floatFooter {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+@keyframes expandLine {
+  0%,
+  100% {
+    width: 30px;
+    opacity: 0.5;
+  }
+  50% {
+    width: 80px;
+    opacity: 1;
+    box-shadow: 0 0 8px #34d399;
+  }
+}
+.main-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.pin-filled {
+  background-color: #34d399;
+  border-color: #34d399;
+  box-shadow: 0 0 10px #34d399;
+}
+.shake-lock {
+  animation: shake 0.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+@keyframes shake {
+  10%,
+  90% {
+    transform: translate3d(-2px, 0, 0);
+  }
+  20%,
+  80% {
+    transform: translate3d(4px, 0, 0);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translate3d(-8px, 0, 0);
+  }
+  40%,
+  60% {
+    transform: translate3d(8px, 0, 0);
+  }
+}
+/* TAMBAHAN DI STYLE.CSS */
+.fps-low {
+  background-color: #ef4444 !important;
+  box-shadow: 0 0 10px #ef4444;
+}
+.fps-med {
+  background-color: #f59e0b !important;
+}
+.fps-high {
+  background-color: #10b981 !important;
+  box-shadow: 0 0 10px #10b981;
+}
+
+/* [TAMBAHKAN/EDIT CSS INI] */
+
+/* Pastikan container background paling belakang */
+#bg-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: -5; /* Di belakang scanlines */
+  overflow: hidden;
+  background-color: transparent;
+  pointer-events: none;
+}
+
+/* Pastikan canvas di dalamnya full screen */
+#bg-container canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+}
+
+/* Fix untuk canvas Three.js agar tidak ngeblock scroll */
+canvas {
+  touch-action: none;
+}
+
+/* TAMBAHAN DI PALING BAWAH style.css */
+
+/* Efek untuk item Background yang dipilih */
+.bg-option {
+  border: 2px solid transparent; /* Border transparan default */
+  transition: all 0.2s ease;
+}
+
+.bg-option:hover {
+  transform: translateY(-2px); /* Efek naik sedikit saat hover */
+  background-color: #334155 !important; /* Warna hover lebih terang */
+}
+
+/* Update class bg-selected */
+.bg-selected {
+  border-color: #10b981 !important;
+  background-color: rgba(16, 185, 129, 0.15) !important;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+/* Update posisi icon checkmark */
+.bg-selected::after {
+  content: "\f00c"; /* FontAwesome Check */
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  position: absolute;
+  top: -6px; /* Naikkan sedikit agar seperti badge */
+  right: -6px; /* Geser ke pojok luar sedikit */
+  color: #fff;
+  background-color: #10b981; /* Lingkaran hijau background check */
+  font-size: 10px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+  z-index: 10;
+}
+/* Style tambahan kecil untuk preview button */
+.btn-shape-pre.active {
+  background: #2563eb;
+  border-color: #60a5fa;
+  color: white;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.3);
+}
+/* Style untuk Tombol Pilihan Matrix */
+.btn-matrix-pre.active {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: #10b981;
+  color: white;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+
+/* Helper Class: Hidden but important */
+.hidden {
+  display: none !important;
+}
+/* Hilangkan Scrollbar tapi tetap bisa scroll */
+.no-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari and Opera */
+}
+
+/* Perbaikan Modal Background agar Checkmark tidak terpotong */
+.modal-grid-container {
+  padding: 10px; /* Memberi ruang untuk elemen yang menonjol keluar */
+  margin: -10px; /* Kompensasi margin agar layout tetap rapi */
+  max-height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+/* 2. Stabilkan rendering tombol saat ditekan */
+button,
+a,
+input,
+.nav-item,
+.bg-option {
+  position: relative;
+  z-index: 20; /* Di atas scanlines */
+  -webkit-backface-visibility: hidden; /* Mencegah kedip */
+  transform: translateZ(0); /* GPU Acceleration */
+}
+
+/* 3. Perbaikan Lock Screen secara spesifik */
+#lock-screen {
+  z-index: 99999 !important;
+  background-color: #0f172a !important; /* Pastikan solid, bukan transparan */
+  /* Logika Bleed Area: Buat lebih lebar dari layar */
+  position: fixed;
+  width: 120vw; /* Lebar 120% dari layar */
+  height: 120vh; /* Tinggi 120% dari layar */
+  top: -10vh; /* Tarik ke atas untuk menengahkan */
+  left: -10vw; /* Tarik ke kiri untuk menengahkan */
+
+  /* Pastikan konten tetap di tengah */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  /* Transisi halus */
+  transition:
+    opacity 0.5s,
+    filter 0.5s,
+    transform 0.5s;
+}
+#lock-screen > div {
+  transform: scale(1); /* Reset skala konten agar proporsional */
+}
+
+#lock-screen button {
+  opacity: 1 !important; /* Mencegah tombol jadi transparan */
+}
+
+/* 4. Fix untuk Input agar tidak zoom/hilang */
+input:focus,
+select:focus {
+  font-size: 16px !important; /* Mencegah auto-zoom di iOS/Android */
+}
+
+/* =========================================
+   [BARU] EFEK TRANSISI UNLOCK (LOADING & BLUR)
+   ========================================= */
+
+/* Class ini akan ditambahkan via JS saat unlock berhasil */
+.unlocking-process {
+  opacity: 0 !important; /* Menghilang */
+  filter: blur(20px); /* Efek Buram */
+  transform: scale(1.1); /* Sedikit Zoom in agar dramatis */
+  pointer-events: none; /* Agar tidak menghalangi klik ke dashboard */
+  transition: all 0.8s ease-in-out; /* Durasi animasi halus 0.8 detik */
+}
+
+/* =========================================
+   [BARU] PROGRESSIVE BLUR ANIMATION
+   ========================================= */
+@keyframes progressiveBlurIn {
+  0% {
+    opacity: 0;
+    filter: blur(15px); /* Blur lebih kuat di awal */
+    transform: translateY(30px) scale(0.95); /* Jarak gerak lebih jauh */
+  }
+  50% {
+    opacity: 0.5;
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Kelas ini akan ditambahkan via Javascript ke elemen target */
+.animate-blur-in {
+  /* Set opacity awal 0 agar tidak berkedip sebelum animasi mulai */
+  opacity: 0;
+  /* Terapkan animasi: durasi 0.7d, kurva halus, dan posisi akhir menetap (forwards) */
+  animation: progressiveBlurIn 1.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+/* --- TAMBAHAN: ANIMASI PIN SALAH --- */
+@keyframes shake-error {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-10px);
+  }
+  40%,
+  80% {
+    transform: translateX(10px);
+  }
+}
+
+.pin-error-anim {
+  animation: shake-error 0.4s ease-in-out;
+  border-color: #ef4444 !important; /* Ubah border jadi merah */
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.5); /* Glow merah */
+}
+
+/* --- PERBAIKAN Z-INDEX KONFIRMASI --- */
+/* Pastikan global-modal (konfirmasi) selalu di atas modal lain */
+#global-modal {
+  z-index: 10005 !important; /* Lebih tinggi dari z-[10001] atau z-50 */
+}
+
+/* 1. EFEK TEKS BERJALAN (MARQUEE) UNTUK REMOTE */
+.marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 10%,
+    black 90%,
+    transparent
+  );
+}
+
+/* --- STYLE MARQUEE BARU (Loop Rapat) --- */
+.marquee-content {
+  display: flex; /* Susun menyamping */
+  gap: 50px; /* Jarak antar teks (Bisa diatur sesuka hati, misal 10px) */
+  width: max-content; /* Lebar mengikuti panjang teks */
+  animation: marquee-loop 6s linear infinite; /* Kecepatan animasi */
+}
+
+@keyframes marquee-loop {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    /* Geser -50% (setengah container) dikurang setengah dari gap (4px) */
+    transform: translateX(-50%);
+  }
+}
+
+/* --- ANIMASI SEAMLESS (Tanpa Putus) --- */
+.marquee-track {
+  display: flex;
+  width: max-content; /* Agar lebar mengikuti isi teks ganda */
+  animation: scroll-seamless 10s linear infinite; /* Atur 10s untuk kecepatan */
+}
+
+@keyframes scroll-seamless {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%); /* Geser setengah lebar (satu set teks) */
+  }
+}
+
+/* 2. FIX OPACITY JADWAL KIPAS (AGAR TIDAK TERTIMPA ANIMASI) */
+/* Kita memaksa opacity tetap 0.5 jika jadwal tidak aktif, meskipun ada animasi progressiveBlurIn */
+.schedule-inactive {
+  opacity: 0.5 !important;
+  filter: grayscale(100%) !important;
+}
+
+/* Pastikan animasi tidak memaksa opacity menjadi 1 di akhir jika ada class inactive */
+.schedule-inactive.animate-blur-in {
+  animation: none !important; /* Matikan animasi masuk untuk yang inactive agar tidak glitch */
+  opacity: 0.5 !important;
+}
+
+/* --- TAMBAHAN STYLE NOTIFIKASI & SENSOR --- */
+
+/* 1. KARTU NOTIFIKASI */
+.notif-card {
+  position: relative;
+  padding: 12px 16px;
+  background: rgba(30, 41, 59, 0.7);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 10px;
+  transition:
+    transform 0.2s,
+    background 0.2s;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+
+  /* HAPUS atau comment baris ini agar shadow/border tidak terpotong */
+  /* overflow: hidden; */
+
+  /* Tambahkan min-height agar tidak gepeng */
+  min-height: 80px;
+}
+
+.notif-card:active {
+  transform: scale(0.98);
+  background: rgba(30, 41, 59, 0.9);
+}
+
+/* Garis Indikator Kiri */
+.notif-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  /* Border radius dihapus di sisi kiri agar nempel full dari atas ke bawah */
+}
+
+/* Typography & Layout */
+.notif-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* PENTING: Mencegah teks memanjang memotong layout */
+}
+
+.notif-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start; /* Ubah ke flex-start agar jam tidak turun */
+  margin-bottom: 4px;
+  gap: 8px;
+}
+
+.notif-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.notif-time {
+  font-size: 0.65rem;
+  color: #64748b;
+  font-family: monospace;
+  white-space: nowrap; /* Mencegah jam turun ke baris baru */
+  margin-top: 2px;
+}
+
+.notif-body {
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  line-height: 1.4;
+  word-wrap: break-word; /* Memastikan teks panjang turun ke bawah */
+}
+
+.notif-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+  margin-top: 2px; /* Sedikit turun agar sejajar judul */
+}
+
+/* 2. STYLE SENSOR PRO (Agar dashboard suhu juga rapi) */
+.sensor-box-pro {
+  background: linear-gradient(
+    145deg,
+    rgba(30, 41, 59, 0.8) 0%,
+    rgba(15, 23, 42, 0.9) 100%
+  );
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.sensor-glow {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  filter: blur(40px);
+  opacity: 0.3;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 0;
+}
+
+/* =========================================
+   STYLE KHUSUS RC CAR CONTROLLER
+   ========================================= */
+:root {
+  --cyan: #00f0ff;
+  --red: #ff2a2a;
+  --amber: #ffae00;
+  --dark-car: #08080c;
+  --glass-car: rgba(20, 25, 30, 0.9);
+}
+
+/* --- UPDATE: CAR CONTROLLER FULLSCREEN --- */
+#car-wrapper {
+  position: fixed !important; /* Paksa agar menutupi elemen lain */
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999; /* Pastikan di atas Navbar/Footer & Voice Button */
+  background-color: var(--dark-car);
+  border-radius: 0 !important; /* Hilangkan radius sudut */
+  margin: 0 !important;
+
+  /* Setup Background agar tetap terlihat bagus */
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+
+  /* Animasi transisi */
+  transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Mode Portrait: Tetap Fullscreen tegak */
+#car-wrapper.mode-portrait {
+  transform: rotate(0deg);
+}
+
+/* Mode Landscape: Putar 90 derajat */
+#car-wrapper.mode-landscape {
+  width: 100vh !important; /* Tukar width/height karena rotasi */
+  height: 100vw !important;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+/* Sesuaikan padding agar konten tidak tertutup notch HP/Poni layar */
+.interface-layer {
+  padding: max(20px, env(safe-area-inset-top)) 20px 20px 20px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* Header Car */
+.top-bar-car {
+  height: 40px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  z-index: 20;
+}
+
+.wifi-panel-car {
+  background: var(--glass-car);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0 12px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.5);
+  margin: 0 auto; /* Center */
+}
+
+.ssid-group {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: 80px;
+  height: 100%;
+  overflow: hidden;
+}
+
+.switch-btn-car {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* Joystick Area */
+.controls-area {
+  flex-grow: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  width: 100%;
+  padding-bottom: 20px;
+}
+
+.stick-zone {
+  width: 120px;
+  height: 120px;
+  position: relative;
+}
+
+.stick-base {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.05),
+    rgba(0, 0, 0, 0.6)
+  );
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  position: relative;
+}
+
+.stick-base.active {
+  border-color: var(--cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.2);
+}
+
+.stick-nub {
+  width: 40%;
+  height: 40%;
+  background: radial-gradient(circle at 30% 30%, #555, #111);
+  border: 1px solid #666;
+  border-radius: 50%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.stick-nub::after {
+  content: "";
+  position: absolute;
+  inset: 20%;
+  background: var(--cyan);
+  border-radius: 50%;
+  opacity: 0.8;
+  box-shadow: 0 0 5px var(--cyan);
+}
+
+/* Buttons Area */
+.btn-zone {
+  width: 140px;
+  height: 140px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
+  transform: rotate(-5deg);
+}
+
+.t-btn {
+  clip-path: polygon(20% 0, 100% 0, 100% 80%, 80% 100%, 0 100%, 0 20%);
+  background: linear-gradient(145deg, #1a1e25, #0f1115);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #888;
+  font-size: 16px;
+  position: relative;
+  border: none; /* Reset */
+}
+
+.t-btn:active,
+.t-btn.active {
+  transform: scale(0.95);
+  filter: brightness(1.2);
+}
+
+.btn-turbo.active {
+  background: var(--red);
+  color: white;
+  box-shadow: 0 0 10px var(--red);
+}
+.btn-horn.active {
+  background: var(--amber);
+  color: black;
+  box-shadow: 0 0 10px var(--amber);
+}
+.btn-light.is-on {
+  background: var(--cyan);
+  color: black;
+  box-shadow: 0 0 10px var(--cyan);
+}
+
+/* Grid positioning buttons */
+.p-top {
+  grid-area: 1 / 2 / 2 / 3;
+}
+.p-left {
+  grid-area: 2 / 1 / 3 / 2;
+}
+.p-right {
+  grid-area: 2 / 3 / 3 / 4;
+}
+.p-bot {
+  grid-area: 3 / 2 / 4 / 3;
+}
+
+.sig-bar {
+  width: 3px;
+  background: #444;
+  margin: 0 1px;
+  border-radius: 1px;
+}
+.sig-bar.on {
+  background: var(--cyan);
+}
+
+/* --- TAMBAHAN STYLE TOMBOL KEMBALI --- */
+.back-btn-car {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  cursor: pointer;
+  z-index: 30;
+}
+
+/* --- STYLE INDIKATOR LAMPU MENYALA --- */
+
+/* 1. Lampu Depan (Kuning) saat Nyala */
+#btn-light-front.is-on {
+  background: rgba(255, 215, 0, 0.2); /* Latar kuning transparan */
+  border-color: #ffd700; /* Garis pinggir kuning */
+  box-shadow:
+    0 0 15px #ffd700,
+    inset 0 0 10px #ffd700; /* Efek cahaya keluar & dalam */
+}
+#btn-light-front.is-on i {
+  color: #ffffff;
+  text-shadow: 0 0 5px #ffd700; /* Icon bersinar */
+}
+
+/* 2. Lampu Belakang (Merah) saat Nyala */
+#btn-light-rear.is-on {
+  background: rgba(255, 42, 42, 0.2); /* Latar merah transparan */
+  border-color: #ff2a2a; /* Garis pinggir merah */
+  box-shadow:
+    0 0 15px #ff2a2a,
+    inset 0 0 10px #ff2a2a;
+}
+#btn-light-rear.is-on i {
+  color: #ffffff;
+  text-shadow: 0 0 5px #ff2a2a;
+}
+
+/* --- STYLE SPEED TOGGLE (MENYATU DENGAN WIFI) --- */
+.speed-toggle-container {
+  display: flex;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 2px;
+  gap: 2px;
+  height: 20px;
+  width: 100%; /* Mengikuti lebar panel wifi di atasnya */
+  justify-content: center;
+}
+
+.spd-opt {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: bold;
+  color: #555;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: monospace;
+}
+
+.spd-opt.active {
+  background: var(--cyan);
+  color: #000;
+  box-shadow: 0 0 5px var(--cyan);
+}
+
+/* --- STYLE TOMBOL REM (MERAH) --- */
+.btn-brake {
+  color: #ff5555;
+}
+.btn-brake:active,
+.btn-brake.active {
+  background: #ff2a2a;
+  color: white;
+  box-shadow: 0 0 10px #ff2a2a;
+}
+
+/* --- SCROLLING TEXT CCTV (Marquee Rapat) --- */
+.cctv-marquee-container {
+  overflow: hidden;
+  white-space: nowrap;
+  position: relative;
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    black 5%,
+    black 95%,
+    transparent 100%
+  );
+}
+
+.cctv-marquee-content {
+  display: inline-flex;
+  gap: 30px; /* Gap tidak terlalu jauh */
+  animation: scrollCCTV 10s linear infinite;
+  min-width: 100%;
+}
+
+@keyframes scrollCCTV {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  } /* Geser setengah karena teks diduplikasi */
+}
+
+/* Pause animasi saat hover agar bisa dibaca */
+.cctv-marquee-container:hover .cctv-marquee-content {
+  animation-play-state: paused;
+}

@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sihir Partikel Optimized</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"
+      crossorigin="anonymous"
+    ></script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #000;
+        color: white;
+        font-family: "Segoe UI", sans-serif;
+      }
+      #canvas-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 1;
+      }
+
+      /* SEMBUNYIKAN TAMPILAN KAMERA SESUAI PERMINTAAN */
+      #camera-feed,
+      #input-video {
+        display: none !important;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      #loading {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 50;
+        transition: opacity 0.5s;
+      }
+
+      #instructions {
+        position: absolute;
+        top: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.6); /* Lebih transparan agar elegan */
+        padding: 15px;
+        border-radius: 12px;
+        z-index: 10;
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        max-width: 250px;
+      }
+
+      .gesture-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+        font-size: 12px;
+        color: #ccc;
+      }
+      .gesture-icon {
+        font-size: 16px;
+        margin-right: 8px;
+        width: 20px;
+        text-align: center;
+      }
+
+      .loader {
+        width: 48px;
+        height: 48px;
+        border: 4px solid #fff;
+        border-bottom-color: #00ffff;
+        border-radius: 50%;
+        display: inline-block;
+        box-sizing: border-box;
+        animation: rotation 1s linear infinite;
+        margin-bottom: 20px;
+      }
+      @keyframes rotation {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">
+      <span class="loader"></span>
+      <h2 class="text-xl font-bold tracking-wider text-cyan-400">MEMUAT AI</h2>
+      <p class="text-gray-500 text-xs mt-2">Menyiapkan Partikel...</p>
+    </div>
+
+    <div id="instructions" class="hidden md:block">
+      <h3 class="font-bold mb-2 text-cyan-400 text-xs tracking-wide uppercase">
+        Daftar Mantra
+      </h3>
+      <div class="gesture-item">
+        <span class="gesture-icon">🖐️</span> <span>Buka: Galaksi</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">✊</span> <span>Kepal: Bola Energi</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">✌️</span> <span>Peace: Portal</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">☝️</span> <span>Telunjuk: Tornado</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">👍</span> <span>Jempol: Kubus</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">🤘</span> <span>Metal: Bintang</span>
+      </div>
+      <div class="gesture-item">
+        <span class="gesture-icon">🤟</span> <span>ILY: Teks Cinta</span>
+      </div>
+
+      <div
+        id="status"
+        class="mt-3 pt-2 border-t border-gray-700 text-[10px] font-mono text-center text-gray-400"
+      >
+        MENUNGGU INPUT...
+      </div>
+    </div>
+
+    <video id="input-video" playsinline></video>
+    <canvas id="camera-feed"></canvas>
+
+    <div id="canvas-container"></div>
+
+    <script>
+      // --- 1. DEFINISI ELEMENT UI (PINDAHKAN KE PALING ATAS) ---
+      // Perbaikan: Variabel ini harus ada sebelum setShape() dipanggil
+      const videoElement = document.getElementById("input-video");
+      const statusEl = document.getElementById("status");
+      const loadingEl = document.getElementById("loading");
+
+      // --- KONFIGURASI OPTIMASI ---
+      const PARTICLE_COUNT = 4000;
+      const TRANSITION_SPEED = 0.08;
+
+      // FRAME SKIPPING CONFIG
+      let frameCounter = 0;
+      const SKIP_FRAMES = 2;
+
+      const savedShape = localStorage.getItem("anim4_last_shape");
+      let currentShape = savedShape || "galaxy";
+      let particles;
+
+      // --- THREE.JS SETUP ---
+      const container = document.getElementById("canvas-container");
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x000000, 0.03);
+
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / window.innerHeight,
+        0.1,
+        1000,
+      );
+      camera.position.z = 30;
+
+      const renderer = new THREE.WebGLRenderer({
+        powerPreference: "high-performance",
+        antialias: false,
+        alpha: true,
+      });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      container.appendChild(renderer.domElement);
+
+      // --- TEXTURE FUNCTION ---
+      function createGlowTexture() {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+        gradient.addColorStop(0, "rgba(255, 255, 255, 1)");
+        gradient.addColorStop(0.4, "rgba(255, 255, 255, 0.3)");
+        gradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 32, 32);
+        return new THREE.CanvasTexture(canvas);
+      }
+
+      // --- INITIAL DATA ARRAYS ---
+      const shapes = {
+        galaxy: [],
+        sphere: [],
+        ring: [],
+        tornado: [],
+        cube: [],
+        star: [],
+        text: [],
+      };
+      const initialPositions = new Float32Array(PARTICLE_COUNT * 3);
+      const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+      // --- DEFINISI BENTUK (MATEMATIKA PARTIKEL) ---
+      // 1. GALAXY
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        shapes.galaxy.push(
+          (Math.random() - 0.5) * 60,
+          (Math.random() - 0.5) * 40,
+          (Math.random() - 0.5) * 40,
+        );
+        initialPositions[i * 3] = shapes.galaxy[i * 3];
+        initialPositions[i * 3 + 1] = shapes.galaxy[i * 3 + 1];
+        initialPositions[i * 3 + 2] = shapes.galaxy[i * 3 + 2];
+        colors[i * 3] = 0.2;
+        colors[i * 3 + 1] = 0.8;
+        colors[i * 3 + 2] = 1.0;
+      }
+      // 2. SPHERE
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+        const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi;
+        const r = 10;
+        shapes.sphere.push(
+          r * Math.cos(theta) * Math.sin(phi),
+          r * Math.sin(theta) * Math.sin(phi),
+          r * Math.cos(phi),
+        );
+      }
+      // 3. RING
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const u = Math.random() * Math.PI * 2;
+        const v = Math.random() * Math.PI * 2;
+        const tube = 2;
+        const radius = 12;
+        shapes.ring.push(
+          (radius + tube * Math.cos(v)) * Math.cos(u),
+          (radius + tube * Math.cos(v)) * Math.sin(u),
+          tube * Math.sin(v),
+        );
+      }
+      // 4. TORNADO
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const height = (i / PARTICLE_COUNT) * 30 - 15;
+        const t = i * 0.1;
+        const radius = 1 + Math.abs(height) * 0.6;
+        shapes.tornado.push(radius * Math.cos(t), height, radius * Math.sin(t));
+      }
+      // 5. CUBE
+      const cubeSize = 14;
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        let x, y, z;
+        const r = Math.random();
+        if (r < 0.2) {
+          x = (Math.random() - 0.5) * cubeSize;
+          y = (Math.random() - 0.5) * cubeSize;
+          z = (Math.random() - 0.5) * cubeSize;
+        } else {
+          const axis = Math.floor(Math.random() * 3);
+          const val = (Math.random() > 0.5 ? 0.5 : -0.5) * cubeSize;
+          if (axis === 0) {
+            x = val;
+            y = (Math.random() - 0.5) * cubeSize;
+            z = (Math.random() - 0.5) * cubeSize;
+          } else if (axis === 1) {
+            y = val;
+            x = (Math.random() - 0.5) * cubeSize;
+            z = (Math.random() - 0.5) * cubeSize;
+          } else {
+            z = val;
+            x = (Math.random() - 0.5) * cubeSize;
+            y = (Math.random() - 0.5) * cubeSize;
+          }
+        }
+        shapes.cube.push(x, y, z);
+      }
+      // 6. STAR
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const seg = (Math.PI * 2) / 5;
+        const a = (angle % seg) / seg;
+        const r = Math.abs(a - 0.5) * 2 * (14 - 5) + 5;
+        shapes.star.push(
+          r * Math.cos(angle),
+          r * Math.sin(angle),
+          (Math.random() - 0.5) * 4,
+        );
+      }
+      // 7. TEXT (LOVE)
+      const textPoints = [];
+      function addPt(x, y) {
+        textPoints.push(x, y, (Math.random() - 0.5) * 2);
+      }
+      // I
+      for (let y = -5; y <= 5; y += 0.6) addPt(-10, y);
+      // Heart
+      for (let t = 0; t < 6.28; t += 0.1) {
+        let x = 12 * Math.pow(Math.sin(t), 3);
+        let y =
+          10 * Math.cos(t) -
+          4 * Math.cos(2 * t) -
+          2 * Math.cos(3 * t) -
+          Math.cos(4 * t);
+        addPt(x * 0.3, y * 0.3 + 1);
+      }
+      // U
+      for (let y = -1; y <= 5; y += 0.6) {
+        addPt(8, y);
+        addPt(12, y);
+      }
+      for (let t = 0; t <= 3.14; t += 0.2)
+        addPt(10 + 2 * Math.cos(t + 3.14), -1 + 2 * Math.sin(t + 3.14));
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const idx = i % Math.max(1, Math.floor(textPoints.length / 3));
+        if (textPoints.length > 0) {
+          shapes.text.push(
+            textPoints[idx * 3],
+            textPoints[idx * 3 + 1],
+            textPoints[idx * 3 + 2],
+          );
+        } else {
+          shapes.text.push(0, 0, 0);
+        }
+      }
+
+      // --- SETUP THREE.JS OBJECTS ---
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(initialPositions, 3),
+      );
+      geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+      const material = new THREE.PointsMaterial({
+        size: 0.6,
+        vertexColors: true,
+        map: createGlowTexture(),
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.9,
+      });
+
+      particles = new THREE.Points(geometry, material);
+      scene.add(particles);
+
+      // --- PANGGIL SETSHAPE (SEKARANG AMAN KARENA statusEl SUDAH DIDEFINISIKAN DIATAS) ---
+      setShape(currentShape);
+
+      // --- ANIMATION LOOP ---
+      function animate() {
+        requestAnimationFrame(animate);
+        const positions = particles.geometry.attributes.position.array;
+        const target = shapes[currentShape];
+
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          const ix = i * 3;
+          positions[ix] += (target[ix] - positions[ix]) * TRANSITION_SPEED;
+          positions[ix + 1] +=
+            (target[ix + 1] - positions[ix + 1]) * TRANSITION_SPEED;
+          positions[ix + 2] +=
+            (target[ix + 2] - positions[ix + 2]) * TRANSITION_SPEED;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+        particles.rotation.y += 0.002;
+        particles.rotation.z += 0.001;
+        renderer.render(scene, camera);
+      }
+      animate();
+
+      // --- AI LOGIC (MEDIAPIPE) ---
+      function onResults(results) {
+        // HILANGKAN LOADING DISINI
+        if (loadingEl) loadingEl.style.display = "none";
+
+        if (
+          results.multiHandLandmarks &&
+          results.multiHandLandmarks.length > 0
+        ) {
+          const lm = results.multiHandLandmarks[0];
+          const gesture = detectGesture(lm);
+          if (gesture) setShape(gesture);
+        } else {
+          statusEl.innerText = "TIDAK ADA TANGAN";
+          statusEl.className =
+            "mt-3 pt-2 border-t border-gray-700 text-[10px] font-mono text-center text-gray-500";
+        }
+      }
+
+      function detectGesture(lm) {
+        const thumbOpen = Math.abs(lm[4].x - lm[2].x) > 0.05;
+        const indexOpen = lm[8].y < lm[6].y;
+        const middleOpen = lm[12].y < lm[10].y;
+        const ringOpen = lm[16].y < lm[14].y;
+        const pinkyOpen = lm[20].y < lm[18].y;
+
+        if (!indexOpen && !middleOpen && !ringOpen && !pinkyOpen)
+          return "sphere"; // Kepal
+        if (indexOpen && middleOpen && !ringOpen && !pinkyOpen) return "ring"; // Peace
+        if (thumbOpen && indexOpen && !middleOpen && !ringOpen && pinkyOpen)
+          return "text"; // ILY
+        if (indexOpen && !middleOpen && !ringOpen && !pinkyOpen)
+          return "tornado"; // Telunjuk
+        if (indexOpen && !middleOpen && !ringOpen && pinkyOpen) return "star"; // Metal
+        if (thumbOpen && !indexOpen && !middleOpen && !ringOpen && !pinkyOpen)
+          return "cube"; // Jempol
+        if (indexOpen && middleOpen && ringOpen && pinkyOpen) return "galaxy"; // Buka
+        return null;
+      }
+
+      function setShape(type) {
+        currentShape = type;
+        localStorage.setItem("anim4_last_shape", type);
+        let label = "",
+          colorHex = 0xffffff,
+          colorClass = "text-white";
+
+        switch (type) {
+          case "galaxy":
+            label = "GALAXY";
+            colorHex = 0x00ffff;
+            colorClass = "text-cyan-400";
+            break;
+          case "sphere":
+            label = "ENERGY BALL";
+            colorHex = 0xffaa00;
+            colorClass = "text-yellow-500";
+            break;
+          case "ring":
+            label = "PORTAL";
+            colorHex = 0x00ff00;
+            colorClass = "text-green-400";
+            break;
+          case "text":
+            label = "LOVE";
+            colorHex = 0xff0080;
+            colorClass = "text-pink-500";
+            break;
+          case "tornado":
+            label = "TORNADO";
+            colorHex = 0xaaaaff;
+            colorClass = "text-blue-300";
+            break;
+          case "cube":
+            label = "MATRIX";
+            colorHex = 0x0000ff;
+            colorClass = "text-blue-600";
+            break;
+          case "star":
+            label = "STAR";
+            colorHex = 0xffd700;
+            colorClass = "text-yellow-300";
+            break;
+        }
+
+        // PASTIKAN statusEl TIDAK NULL (Meskipun sudah dipindah ke atas, kita jaga-jaga)
+        if (statusEl) {
+          statusEl.innerHTML = `SIHIR: <span class="${colorClass} font-bold">${label}</span>`;
+        }
+
+        if (particles) {
+          const colorsAttr = particles.geometry.attributes.color.array;
+          const cTarget = new THREE.Color(colorHex);
+          const cBase = new THREE.Color(0xffffff);
+          for (let i = 0; i < PARTICLE_COUNT; i++) {
+            const mixed = cTarget.clone().lerp(cBase, Math.random() * 0.4);
+            colorsAttr[i * 3] = mixed.r;
+            colorsAttr[i * 3 + 1] = mixed.g;
+            colorsAttr[i * 3 + 2] = mixed.b;
+          }
+          particles.geometry.attributes.color.needsUpdate = true;
+        }
+      }
+
+      // --- INIT AI ---
+      const hands = new Hands({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 0,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+      hands.onResults(onResults);
+
+      const cam = new Camera(videoElement, {
+        onFrame: async () => {
+          frameCounter++;
+          if (frameCounter % (SKIP_FRAMES + 1) === 0) {
+            await hands.send({ image: videoElement });
+          }
+        },
+        width: 320,
+        height: 240,
+      });
+
+      const savedState = localStorage.getItem("iframeCamState");
+      if (savedState !== "OFF") {
+        // Cek lagi apakah videoElement ada sebelum start
+        if (videoElement) {
+          startWebcamManual().then(() => console.log("Camera started"));
+        }
+      } else {
+        if (loadingEl) loadingEl.style.display = "none"; // Sembunyikan loading jika mode OFF
+      }
+
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+      // --- LOGIKA SWITCH CAMERA ---
+      let currentFacingMode = "user"; // Default depan
+
+      function stopCamera() {
+        // 1. Stop MediaPipe Camera Utils (cegah loop frame)
+        if (typeof cam !== "undefined") {
+          try {
+            // Kita tidak stop cam secara total karena instance 'cam' sulit di-restart
+            // Tapi kita pastikan video element bersih
+          } catch (e) {
+            console.log("Cam utils stop error", e);
+          }
+        }
+
+        // 2. Stop Native Stream (PENTING UNTUK MENCEGAH ABORT ERROR)
+        if (videoElement.srcObject) {
+          const tracks = videoElement.srcObject.getTracks();
+          tracks.forEach((track) => {
+            track.stop();
+            track.enabled = false;
+          });
+          videoElement.srcObject = null;
+        }
+      }
+
+      function restartCamera() {
+        stopCamera();
+        setTimeout(() => {
+          // Re-init Camera dengan mode baru
+          const newCam = new Camera(videoElement, {
+            onFrame: async () => {
+              frameCounter++;
+              if (frameCounter % (SKIP_FRAMES + 1) === 0) {
+                await hands.send({ image: videoElement });
+              }
+            },
+            width: 320,
+            height: 240,
+            facingMode: currentFacingMode, // Gunakan variable ini
+          });
+
+          // Override objek cam lama dengan yang baru
+          // (Perhatikan: Camera Utils MediaPipe agak tricky untuk di-restart,
+          //  cara paling aman adalah getUserMedia manual lalu pasang ke videoElement)
+
+          startWebcamManual();
+        }, 500);
+      }
+
+      async function startWebcamManual() {
+        // 1. Matikan dulu stream lama dengan bersih
+        stopCamera();
+
+        // Beri jeda sedikit agar browser memproses stop track
+        await new Promise((r) => setTimeout(r, 100));
+
+        const constraints = {
+          video: {
+            facingMode: currentFacingMode,
+            width: { ideal: 320 },
+            height: { ideal: 240 },
+          },
+        };
+
+        try {
+          // 2. Request Stream Baru
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+          // 3. Pasang ke Video Element
+          videoElement.srcObject = stream;
+
+          // 4. Play dengan Error Handling (Solusi AbortError)
+          await videoElement.play().catch((e) => {
+            console.warn("⚠️ Play interrupted (Normal saat switch cepat):", e);
+          });
+
+          console.log(`✅ Kamera dimulai: ${currentFacingMode}`);
+
+          // 5. Re-trigger MediaPipe Camera Loop
+          if (typeof cam !== "undefined") {
+            // Cukup panggil start, dia akan membaca videoElement yang baru
+            cam.start().catch((e) => console.log("Cam utils start error", e));
+          }
+        } catch (err) {
+          console.error("❌ Gagal Akses Kamera:", err);
+        }
+      }
+
+      // --- LISTENER MESSAGE DARI LOGIC.JS ---
+      window.addEventListener("message", (event) => {
+        const cmd = event.data;
+
+        if (cmd === "STOP_CAMERA_ONLY") {
+          console.log("🛑 Perintah Stop diterima");
+          stopCamera();
+        } else if (cmd === "START_CAMERA_ONLY") {
+          console.log("🟢 Perintah Start diterima");
+          startWebcamManual();
+        } else if (cmd === "SWITCH_CAMERA") {
+          console.log("🔄 Switch Camera Request");
+          // Toggle Variable
+          currentFacingMode =
+            currentFacingMode === "user" ? "environment" : "user";
+          // Restart Kamera
+          startWebcamManual();
+        }
+      });
+    </script>
+  </body>
+</html>

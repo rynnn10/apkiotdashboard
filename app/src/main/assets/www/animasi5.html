@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Partikel 3D: Gestur Optmized</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #050505;
+        font-family: "Inter", sans-serif;
+      }
+      #canvas-container {
+        width: 100vw;
+        height: 100vh;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 0;
+      }
+
+      /* HUD STYLING */
+      .gesture-hud {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 220px;
+        background: rgba(15, 23, 42, 0.8);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 15px;
+        z-index: 50;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      }
+      @media (max-width: 640px) {
+        .gesture-hud {
+          bottom: 90px;
+          right: 10px;
+          width: 180px;
+        }
+      }
+
+      .bar-bg {
+        width: 100%;
+        height: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 3px;
+        overflow: hidden;
+        position: relative;
+      }
+      .bar-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition:
+          width 0.1s linear,
+          left 0.1s linear;
+      }
+      .center-line {
+        position: absolute;
+        left: 50%;
+        top: 0;
+        height: 100%;
+        width: 2px;
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateX(-50%);
+      }
+
+      /* Hidden Elements */
+      #webcam-container {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      #loading {
+        position: absolute;
+        inset: 0;
+        background: #050505;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 200;
+        transition: opacity 0.5s ease;
+      }
+      .loader {
+        border: 3px solid rgba(255, 255, 255, 0.1);
+        border-left-color: #3b82f6;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loading">
+      <div class="loader mb-4"></div>
+      <p class="text-white text-xs tracking-widest uppercase opacity-80">
+        Memuat AI (Optimized Mode)...
+      </p>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="gesture-hud" class="gesture-hud">
+      <div
+        class="flex justify-between items-center mb-3 border-b border-white/10 pb-2"
+      >
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-robot text-blue-400 text-xs"></i>
+          <span class="text-[10px] font-bold text-gray-300 uppercase"
+            >AI Control</span
+          >
+        </div>
+        <div
+          id="status-indicator"
+          class="w-2 h-2 rounded-full bg-red-500 animate-pulse"
+        ></div>
+      </div>
+
+      <div class="space-y-3">
+        <div>
+          <div class="flex justify-between text-[9px] text-gray-400 mb-1">
+            <span>Zoom</span
+            ><span id="val-zoom" class="text-white font-mono">1.0x</span>
+          </div>
+          <div class="bar-bg">
+            <div
+              id="bar-zoom"
+              class="bar-fill bg-blue-500"
+              style="width: 30%"
+            ></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-[9px] text-gray-400 mb-1">
+            <span>Posisi X</span
+            ><span id="val-x" class="text-green-400 font-mono">Center</span>
+          </div>
+          <div class="bar-bg">
+            <div class="center-line"></div>
+            <div
+              id="bar-x"
+              class="bar-fill bg-green-500 absolute"
+              style="left: 50%; width: 0%"
+            ></div>
+          </div>
+        </div>
+        <div>
+          <div class="flex justify-between text-[9px] text-gray-400 mb-1">
+            <span>Posisi Y</span
+            ><span id="val-y" class="text-yellow-400 font-mono">Center</span>
+          </div>
+          <div class="bar-bg">
+            <div class="center-line"></div>
+            <div
+              id="bar-y"
+              class="bar-fill bg-yellow-500 absolute"
+              style="left: 50%; width: 0%"
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="webcam-container">
+      <video id="webcam" autoplay playsinline muted></video>
+    </div>
+
+    <script type="module">
+      import {
+        FilesetResolver,
+        HandLandmarker,
+      } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0";
+
+      const urlParams = new URLSearchParams(window.location.search);
+      // Prioritas: 1. URL Param (jika ada update dari logic.js), 2. LocalStorage (terakhir dipakai), 3. Default
+      const savedShape = localStorage.getItem("anim5_last_shape");
+      const initialShape = urlParams.get("shape") || savedShape || "galaxy";
+      const colorParam = urlParams.get("color") || "ffffff";
+      const initialColor = "#" + colorParam;
+      // Tambahkan di bagian atas script module
+      let currentFacingMode = "user";
+      let count = 15000;
+      let scene, camera, renderer, particles, geometry, material;
+      let positionsOriginal, positionsTarget;
+      let clock = new THREE.Clock();
+
+      let targetExpansion = 1.0,
+        currentExpansion = 1.0;
+      let targetRotY = 0.002,
+        currentRotY = 0.002;
+      let targetRotX = 0.0,
+        currentRotX = 0.0;
+
+      // HUD Elements
+      const barZoom = document.getElementById("bar-zoom"),
+        valZoom = document.getElementById("val-zoom");
+      const barX = document.getElementById("bar-x"),
+        valX = document.getElementById("val-x");
+      const barY = document.getElementById("bar-y"),
+        valY = document.getElementById("val-y");
+      const statusInd = document.getElementById("status-indicator");
+      const loadingScreen = document.getElementById("loading");
+
+      initThreeJS();
+      initMediaPipe();
+
+      function generateSprite() {
+        const canvas = document.createElement("canvas");
+        canvas.width = 32;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+        gradient.addColorStop(0, "rgba(255,255,255,1)");
+        gradient.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, 32, 32);
+        return new THREE.CanvasTexture(canvas);
+      }
+
+      function initThreeJS() {
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x020202, 0.0025);
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000,
+        );
+        camera.position.z = 25;
+
+        renderer = new THREE.WebGLRenderer({
+          antialias: false,
+          alpha: true,
+          powerPreference: "high-performance",
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+        document
+          .getElementById("canvas-container")
+          .appendChild(renderer.domElement);
+
+        createParticles();
+        window.addEventListener("resize", () => {
+          camera.aspect = window.innerWidth / window.innerHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        animate();
+      }
+
+      function createParticles() {
+        geometry = new THREE.BufferGeometry();
+        positionsOriginal = new Float32Array(count * 3);
+        positionsTarget = new Float32Array(count * 3);
+        const colors = new Float32Array(count * 3);
+
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          positionsOriginal[i3] = (Math.random() - 0.5) * 50;
+          positionsOriginal[i3 + 1] = (Math.random() - 0.5) * 50;
+          positionsOriginal[i3 + 2] = (Math.random() - 0.5) * 50;
+          positionsTarget[i3] = positionsOriginal[i3];
+          positionsTarget[i3 + 1] = positionsOriginal[i3 + 1];
+          positionsTarget[i3 + 2] = positionsOriginal[i3 + 2];
+
+          const color = new THREE.Color();
+          color.setHSL((i / count) * 0.8 + 0.1, 0.9, 0.6);
+          colors[i3] = color.r;
+          colors[i3 + 1] = color.g;
+          colors[i3 + 2] = color.b;
+        }
+
+        geometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(positionsOriginal, 3),
+        );
+        geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+        material = new THREE.PointsMaterial({
+          size: 0.6,
+          map: generateSprite(),
+          color: new THREE.Color(initialColor),
+          vertexColors: true,
+          transparent: true,
+          opacity: 0.8,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          sizeAttenuation: true,
+        });
+
+        particles = new THREE.Points(geometry, material);
+        scene.add(particles);
+        setShape(initialShape);
+      }
+
+      // --- LOGIKA BENTUK PARTIKEL LENGKAP ---
+      function setShape(shape) {
+        // TAMBAHAN: Simpan bentuk ke memori
+        localStorage.setItem("anim5_last_shape", shape);
+
+        if (shape === "heart") calculateHeart();
+        else if (shape === "sphere") calculateSphere();
+        else if (shape === "cube") calculateCube();
+        else if (shape === "saturn") calculateSaturn();
+        else if (shape === "flower") calculateFlower();
+        else if (shape === "dna") calculateDNA();
+        else if (shape === "pyramid") calculatePyramid();
+        else calculateGalaxy();
+      }
+
+      function calculateGalaxy() {
+        const p = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3,
+            angle = i * 0.002 + Math.random() * 0.5,
+            r = 2 + Math.random() * 15;
+          const off = (i % 3) * ((Math.PI * 2) / 3);
+          p[i3] = Math.cos(angle + off) * r;
+          p[i3 + 1] = (Math.random() - 0.5) * (r * 0.2);
+          p[i3 + 2] = Math.sin(angle + off) * r;
+        }
+        morphTo(p);
+      }
+
+      function calculateHeart() {
+        const p = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3,
+            t = Math.random() * Math.PI * 2;
+          // Rumus parametrik hati 3D
+          const x = 16 * Math.pow(Math.sin(t), 3);
+          const y =
+            13 * Math.cos(t) -
+            5 * Math.cos(2 * t) -
+            2 * Math.cos(3 * t) -
+            Math.cos(4 * t);
+          p[i3] = x * 0.8 + (Math.random() - 0.5);
+          p[i3 + 1] = y * 0.8 + (Math.random() - 0.5);
+          p[i3 + 2] = (Math.random() - 0.5) * 6; // Ketebalan hati
+        }
+        morphTo(p);
+      }
+
+      function calculateSphere() {
+        const p = new Float32Array(count * 3);
+        const radius = 12;
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          // Fibonacci Sphere Algorithm
+          const phi = Math.acos(-1 + (2 * i) / count);
+          const theta = Math.sqrt(count * Math.PI) * phi;
+          p[i3] = radius * Math.cos(theta) * Math.sin(phi);
+          p[i3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+          p[i3 + 2] = radius * Math.cos(phi);
+        }
+        morphTo(p);
+      }
+
+      function calculateCube() {
+        const p = new Float32Array(count * 3),
+          s = 16;
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          // Distribusi acak dalam kubus
+          p[i3] = (Math.random() - 0.5) * s;
+          p[i3 + 1] = (Math.random() - 0.5) * s;
+          p[i3 + 2] = (Math.random() - 0.5) * s;
+        }
+        morphTo(p);
+      }
+
+      function calculateSaturn() {
+        const p = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          // 70% partikel untuk cincin, 30% untuk planet
+          if (i < count * 0.7) {
+            // Cincin
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 10 + Math.random() * 8; // Radius cincin 10-18
+            p[i3] = Math.cos(angle) * dist;
+            p[i3 + 1] = (Math.random() - 0.5) * 0.5; // Tipis
+            p[i3 + 2] = Math.sin(angle) * dist;
+          } else {
+            // Planet (Bola)
+            const radius = 6;
+            const phi = Math.acos(-1 + (2 * (i - count * 0.7)) / (count * 0.3));
+            const theta = Math.sqrt(count * 0.3 * Math.PI) * phi;
+            p[i3] = radius * Math.cos(theta) * Math.sin(phi);
+            p[i3 + 1] = radius * Math.sin(theta) * Math.sin(phi);
+            p[i3 + 2] = radius * Math.cos(phi);
+          }
+        }
+        morphTo(p);
+      }
+
+      function calculateFlower() {
+        const p = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          // Koordinat polar dengan variasi radius menyerupai kelopak
+          const theta = Math.random() * Math.PI * 2; // Sudut lingkaran
+          const k = 5; // Jumlah kelopak
+          const rBase = 12;
+          // Rumus bunga: r = cos(k * theta)
+          const r = Math.abs(Math.cos(k * theta)) * rBase + Math.random() * 2;
+
+          p[i3] = r * Math.cos(theta);
+          p[i3 + 1] = r * Math.sin(theta);
+          // Z bervariasi agar cekung ke tengah
+          p[i3 + 2] = (rBase - r) * 0.5 + (Math.random() - 0.5);
+        }
+        morphTo(p);
+      }
+
+      function calculateDNA() {
+        const p = new Float32Array(count * 3);
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          // Double Helix
+          const strand = i % 2 === 0 ? 1 : -1; // Dua untai
+          const y = (i / count) * 30 - 15; // Tinggi dari -15 ke 15
+          const angle = y * 0.5; // Putaran
+          const radius = 5;
+
+          p[i3] = Math.cos(angle) * radius * strand;
+          p[i3 + 1] = y;
+          p[i3 + 2] = Math.sin(angle) * radius * strand;
+
+          // Tambahkan noise agar terlihat seperti partikel
+          if (Math.random() > 0.8) {
+            const t = Math.random();
+            // Anak tangga DNA (menghubungkan dua untai)
+            p[i3] = Math.cos(angle) * radius * (1 - 2 * t);
+            p[i3 + 2] = Math.sin(angle) * radius * (1 - 2 * t);
+          }
+        }
+        morphTo(p);
+      }
+
+      function calculatePyramid() {
+        const p = new Float32Array(count * 3);
+        const height = 15;
+        const baseSize = 12;
+
+        for (let i = 0; i < count; i++) {
+          const i3 = i * 3;
+          const y = Math.random() * height - height / 2; // Y dari bawah ke atas
+          // Semakin ke atas (y positif), radius semakin kecil
+          const progress = 1 - (y + height / 2) / height;
+          const r = progress * baseSize;
+
+          p[i3] = (Math.random() - 0.5) * 2 * r;
+          p[i3 + 1] = y;
+          p[i3 + 2] = (Math.random() - 0.5) * 2 * r;
+        }
+        morphTo(p);
+      }
+
+      function morphTo(target) {
+        positionsTarget = target;
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        const positions = particles.geometry.attributes.position.array;
+        for (let i = 0; i < count * 3; i++) {
+          positions[i] += (positionsTarget[i] - positions[i]) * 0.05;
+        }
+        particles.geometry.attributes.position.needsUpdate = true;
+
+        currentExpansion += (targetExpansion - currentExpansion) * 0.1;
+        particles.scale.setScalar(currentExpansion);
+        currentRotY += (targetRotY - currentRotY) * 0.1;
+        currentRotX += (targetRotX - currentRotX) * 0.1;
+
+        particles.rotation.y += currentRotY;
+        particles.rotation.x += currentRotX;
+        renderer.render(scene, camera);
+      }
+
+      // --- AI LOGIC (OPTIMIZED 3-FRAME SKIP) ---
+      let handLandmarker,
+        lastVideoTime = -1;
+      const video = document.getElementById("webcam");
+      let frameCounter = 0;
+
+      async function initMediaPipe() {
+        try {
+          const vision = await FilesetResolver.forVisionTasks(
+            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/wasm",
+          );
+          handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+              delegate: "GPU",
+            },
+            runningMode: "VIDEO",
+            numHands: 1,
+          });
+          const savedState = localStorage.getItem("iframeCamState");
+
+          if (savedState !== "OFF") {
+            startWebcam(); // Hanya jalankan jika ON
+          } else {
+            // Jika OFF, sembunyikan loading dan set indikator merah
+            console.log("💤 Kamera Start dalam mode OFF");
+            loadingScreen.style.display = "none";
+            statusInd.classList.remove("bg-green-500");
+            statusInd.classList.add("bg-red-500");
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // [DALAM FILE: animasi5.html]
+
+      function stopStream() {
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach((t) => t.stop());
+          video.srcObject = null;
+        }
+      }
+
+      function startWebcam() {
+        // 1. Stop dulu stream lama agar 'play()' request sebelumnya dibatalkan browser
+        stopStream();
+
+        navigator.mediaDevices
+          .getUserMedia({
+            video: {
+              facingMode: currentFacingMode,
+              width: 320,
+              height: 240,
+            },
+          })
+          .then((stream) => {
+            video.srcObject = stream;
+            // Gunakan event loadeddata daripada langsung play untuk stabilitas
+            video.onloadeddata = () => {
+              video
+                .play()
+                .catch((e) =>
+                  console.log("Play interrupted (Normal saat switch)"),
+                );
+              predictWebcam();
+            };
+
+            loadingScreen.style.opacity = "0";
+            setTimeout(() => (loadingScreen.style.display = "none"), 500);
+            statusInd.classList.remove("bg-red-500");
+            statusInd.classList.add("bg-green-500");
+          })
+          .catch((err) => console.error("Cam Error:", err));
+      }
+
+      async function predictWebcam() {
+        requestAnimationFrame(predictWebcam);
+        frameCounter++;
+        if (frameCounter % 3 !== 0) return;
+
+        if (video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
+          if (handLandmarker) {
+            // PERBAIKAN: Cek apakah dimensi video sudah valid (> 0)
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              try {
+                const res = handLandmarker.detectForVideo(
+                  video,
+                  performance.now(),
+                );
+                if (res.landmarks.length > 0) {
+                  const lm = res.landmarks[0];
+                  const dist = Math.sqrt(
+                    Math.pow(lm[4].x - lm[8].x, 2) +
+                      Math.pow(lm[4].y - lm[8].y, 2),
+                  );
+                  targetExpansion =
+                    0.5 + Math.max(0, Math.min(1, (dist - 0.05) * 5)) * 2.5;
+
+                  const offsetX = lm[9].x - 0.5;
+                  const offsetY = lm[9].y - 0.5;
+                  targetRotY = offsetX * 0.2;
+                  targetRotX = offsetY * 0.2;
+
+                  valZoom.innerText = targetExpansion.toFixed(1) + "x";
+                  barZoom.style.width =
+                    Math.min(100, (targetExpansion / 3) * 100) + "%";
+
+                  const pctX = (offsetX + 0.5) * 100;
+                  if (offsetX < 0) {
+                    barX.style.left = pctX + "%";
+                    barX.style.width = 50 - pctX + "%";
+                    valX.innerText = "Kiri";
+                  } else {
+                    barX.style.left = "50%";
+                    barX.style.width = pctX - 50 + "%";
+                    valX.innerText = "Kanan";
+                  }
+
+                  const pctY = (offsetY + 0.5) * 100;
+                  if (offsetY < 0) {
+                    barY.style.left = pctY + "%";
+                    barY.style.width = 50 - pctY + "%";
+                    valY.innerText = "Atas";
+                  } else {
+                    barY.style.left = "50%";
+                    barY.style.width = pctY - 50 + "%";
+                    valY.innerText = "Bawah";
+                  }
+                } else {
+                  targetRotY = 0.002;
+                  targetRotX = 0.0;
+                  targetExpansion =
+                    1.0 + Math.sin(clock.getElapsedTime()) * 0.1;
+                  barZoom.style.width = "30%";
+                  valZoom.innerText = "1.0x";
+                  barX.style.width = "0%";
+                  barX.style.left = "50%";
+                  valX.innerText = "Center";
+                  barY.style.width = "0%";
+                  barY.style.left = "50%";
+                  valY.innerText = "Center";
+                }
+              } catch (e) {
+                console.warn("AI Frame Skipped (Not Ready)");
+              }
+            }
+          }
+        }
+      }
+
+      // --- LISTENER PESAN DARI LOGIC.JS (START/STOP) ---
+      window.addEventListener("message", (event) => {
+        const cmd = event.data;
+
+        if (cmd === "STOP_CAMERA_ONLY") {
+          console.log("🛑 Perintah Stop Kamera Diterima");
+
+          // 1. Hentikan Stream Video
+          const vid = document.getElementById("webcam");
+          if (vid && vid.srcObject) {
+            const tracks = vid.srcObject.getTracks();
+            tracks.forEach((track) => track.stop());
+            vid.srcObject = null;
+          }
+
+          // 2. Set Status Indikator ke Merah (Offline)
+          const ind = document.getElementById("status-indicator");
+          if (ind) {
+            ind.classList.remove("bg-green-500");
+            ind.classList.add("bg-red-500");
+          }
+
+          // 3. Paksa Mode Idle (Gerak halus otomatis)
+          // Kita reset target rotasi agar animasi tetap jalan cantik
+          targetRotY = 0.002;
+          targetRotX = 0.0;
+          targetExpansion = 1.0;
+
+          // Reset Bar HUD
+          document.getElementById("bar-zoom").style.width = "30%";
+          document.getElementById("val-zoom").innerText = "Idle";
+        } else if (cmd === "START_CAMERA_ONLY") {
+          console.log("🟢 Perintah Start Kamera Diterima");
+          // Panggil fungsi startWebcam yang sudah ada
+          startWebcam();
+        } else if (cmd === "SWITCH_CAMERA") {
+          console.log("🔄 Switch Camera 3D");
+          currentFacingMode =
+            currentFacingMode === "user" ? "environment" : "user";
+          startWebcam();
+        }
+      });
+    </script>
+  </body>
+</html>
