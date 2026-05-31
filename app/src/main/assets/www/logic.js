@@ -138,16 +138,20 @@ if (typeof firebase !== "undefined") {
           .then((registration) => {
             console.log("✅ SW Terdaftar. Scope:", registration.scope);
             // Daftarkan Service Worker ini untuk FCM
-            try { messaging.useServiceWorker(registration); } catch(e){}
+            try {
+              messaging.useServiceWorker(registration);
+            } catch (e) {}
             // Panggil token otomatis setelah SW siap
             requestPermission();
           })
           .catch((err) => console.error("Gagal Register SW:", err));
       }
     } else {
-      console.warn("Firebase Messaging tidak didukung di lingkungan ini (misal file://)");
+      console.warn(
+        "Firebase Messaging tidak didukung di lingkungan ini (misal file://)",
+      );
     }
-  } catch(e) {
+  } catch (e) {
     console.warn("Gagal inisialisasi Firebase", e);
   }
 }
@@ -599,9 +603,8 @@ function switchPage(pageId, element) {
     const voiceBtn =
       document.getElementById("btn-voice-command") ||
       document.querySelector(".floating-voice-btn");
-
   } // <--- Restore closing brace for if (pageId === "page-hand")
-  
+
   // --- UPDATE HEADER & NAVIGATION UI ---
   const backBtn = document.getElementById("btn-back-home");
   const headerTitle = document.getElementById("mobile-header-title");
@@ -616,11 +619,11 @@ function switchPage(pageId, element) {
     "page-car": "Car Control",
     "page-youtube": "CCTV LIVE",
   };
-  
+
   if (headerTitle) {
     headerTitle.innerText = titles[pageId] || "IoT Dashboard";
   }
-  
+
   if (backBtn) {
     if (pageId === "page-home") {
       backBtn.classList.add("hidden");
@@ -1231,51 +1234,53 @@ function connectMQTT() {
         console.log("✅ MQTT Terhubung!");
         updateStatus(!0, "Terhubung");
 
-      // --- PERBAIKAN: Safety Check sebelum Subscribe ---
-      if (mqttClient && typeof mqttClient.subscribe === "function") {
-        mqttClient.subscribe(mqtt_topic_ir_recv);
-        mqttClient.subscribe(mqtt_topic_sensor);
-        mqttClient.subscribe(mqtt_topic_kulkas);
-        mqttClient.subscribe(mqtt_topic_schedule);
-        mqttClient.subscribe(mqtt_topic_fan_ctrl);
-        mqttClient.subscribe(
-          "projek/belajar/sensoe_suhu_riyan10_bro/control/#",
-        );
-        mqttClient.subscribe(mqtt_topic_security_ctrl);
-        mqttClient.subscribe(mqtt_topic_car_status);
-        mqttClient.subscribe(mqtt_topic_jadwal_data);
-        mqttClient.subscribe(mqtt_topic_jadwal_info);
-        mqttClient.subscribe(mqtt_topic_cctv_sync);
-        mqttClient.subscribe("projek/belajar/status/#");
-        mqttClient.subscribe("projek/belajar/sensoe_suhu_riyan10_bro/signal/+");
-        mqttClient.subscribe("projek/belajar/wifi_scan_result");
-        mqttClient.subscribe("projek/belajar/sensor_jarak");
-        console.log("📡 Subscribed to All Control Topics");
-      } else {
-        console.error("⚠️ Error: MQTT Client belum siap untuk Subscribe.");
-      }
-      // ------------------------------------------------
+        // --- PERBAIKAN: Safety Check sebelum Subscribe ---
+        if (mqttClient && typeof mqttClient.subscribe === "function") {
+          mqttClient.subscribe(mqtt_topic_ir_recv);
+          mqttClient.subscribe(mqtt_topic_sensor);
+          mqttClient.subscribe(mqtt_topic_kulkas);
+          mqttClient.subscribe(mqtt_topic_schedule);
+          mqttClient.subscribe(mqtt_topic_fan_ctrl);
+          mqttClient.subscribe(
+            "projek/belajar/sensoe_suhu_riyan10_bro/control/#",
+          );
+          mqttClient.subscribe(mqtt_topic_security_ctrl);
+          mqttClient.subscribe(mqtt_topic_car_status);
+          mqttClient.subscribe(mqtt_topic_jadwal_data);
+          mqttClient.subscribe(mqtt_topic_jadwal_info);
+          mqttClient.subscribe(mqtt_topic_cctv_sync);
+          mqttClient.subscribe("projek/belajar/status/#");
+          mqttClient.subscribe(
+            "projek/belajar/sensoe_suhu_riyan10_bro/signal/+",
+          );
+          mqttClient.subscribe("projek/belajar/wifi_scan_result");
+          mqttClient.subscribe("projek/belajar/sensor_jarak");
+          console.log("📡 Subscribed to All Control Topics");
+        } else {
+          console.error("⚠️ Error: MQTT Client belum siap untuk Subscribe.");
+        }
+        // ------------------------------------------------
 
-      if (fanSchedules.length > 0) {
-        console.log("♻️ Restore Jadwal dari HP ke Alat...");
-        uploadScheduleToCloud();
-      }
-      if (
-        typeof syncRemoteToESP === "function" &&
-        remoteDashboards &&
-        remoteDashboards.length > 0
-      ) {
-        console.log("♻️ Sync Database Remote tertunda ke OLED...");
-        syncRemoteToESP();
-      }
-    },
-    onFailure: (m) => {
-      isMqttConnecting = false;
-      console.error("❌ Gagal Koneksi MQTT:", m.errorMessage);
-      updateStatus(!1, "Gagal Koneksi");
-      setTimeout(connectMQTT, 5000);
-    },
-  });
+        if (fanSchedules.length > 0) {
+          console.log("♻️ Restore Jadwal dari HP ke Alat...");
+          uploadScheduleToCloud();
+        }
+        if (
+          typeof syncRemoteToESP === "function" &&
+          remoteDashboards &&
+          remoteDashboards.length > 0
+        ) {
+          console.log("♻️ Sync Database Remote tertunda ke OLED...");
+          syncRemoteToESP();
+        }
+      },
+      onFailure: (m) => {
+        isMqttConnecting = false;
+        console.error("❌ Gagal Koneksi MQTT:", m.errorMessage);
+        updateStatus(!1, "Gagal Koneksi");
+        setTimeout(connectMQTT, 5000);
+      },
+    });
   } catch (e) {
     isMqttConnecting = false;
     console.error("❌ Error System MQTT:", e);
@@ -2458,10 +2463,7 @@ function renderList() {
 }
 
 // ==========================================
-// [PERBAIKAN] MODAL INFO (DENGAN KONTROL SUARA)
-// ==========================================
-// ==========================================
-// [PERBAIKAN] MODAL INFO (DENGAN KONTROL SUARA)
+// [PERBAIKAN] MODAL INFO (DENGAN KONTROL SUARA & NATIVE NOTIFICATION)
 // ==========================================
 function showInfoModal(title, message, type, useVoice = true) {
   // Default useVoice = true (bicara)
@@ -2492,24 +2494,32 @@ function showInfoModal(title, message, type, useVoice = true) {
     modalIcon.classList.add("fa-solid", "fa-circle-info", "text-blue-500");
   }
 
-  // Tampilkan Modal
+  // Tampilkan Modal Web
   modal.classList.remove("hidden");
   modal.classList.add("flex");
 
   // --- LOGIKA SUARA DIPERBAIKI ---
-  // Hentikan suara lama dulu
   if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
 
-  // Hanya bicara jika useVoice bernilai TRUE
+  let cleanMessage = message.replace(/<[^>]*>?/gm, "");
+
   if (useVoice === true) {
-    // Karena message sekarang bisa berisi tag HTML, lebih aman jangan ucapkan tag-nya.
-    // Kita hapus tag HTML-nya khusus untuk suara bot
-    let cleanMessage = message.replace(/<[^>]*>?/gm, "");
     speakText(title + ". " + cleanMessage);
   }
+
+  // --- [BARU] TEMBAK KE NOTIFIKASI NATIVE ANDROID ---
+  // Mencegah spam notifikasi untuk alert sepele (seperti "Memuat...")
+  if (
+    type !== "loading" &&
+    typeof AndroidApp !== "undefined" &&
+    AndroidApp.showSystemNotification
+  ) {
+    AndroidApp.showSystemNotification(title, cleanMessage);
+  }
 }
+
 window.closeModalAndReset = function () {
   // 1. Tutup Global Modal (Modal Konfirmasi/Delete)
   document.getElementById("global-modal").classList.remove("active");
@@ -4791,7 +4801,7 @@ window.addEventListener("DOMContentLoaded", () => {
 function unlockApp(isAuto = false) {
   console.log("🚀 Memulai Koneksi MQTT...");
   connectMQTT();
-  
+
   if (typeof applyGlobalAnimation === "function") {
     setTimeout(() => {
       applyGlobalAnimation("#device-status-list > div", 0.2);
@@ -4801,11 +4811,14 @@ function unlockApp(isAuto = false) {
     }, 300);
   }
 
-  if (typeof onYouTubeIframeAPIReady === "function" && (typeof player === 'undefined' || !player)) {
-      console.log("🎵 UNLOCK BERHASIL: Menyiapkan Musik Player...");
-      setTimeout(() => onYouTubeIframeAPIReady(), 1500);
+  if (
+    typeof onYouTubeIframeAPIReady === "function" &&
+    (typeof player === "undefined" || !player)
+  ) {
+    console.log("🎵 UNLOCK BERHASIL: Menyiapkan Musik Player...");
+    setTimeout(() => onYouTubeIframeAPIReady(), 1500);
   }
-  
+
   // Start background mode
   setTimeout(() => {
     if (
@@ -4947,8 +4960,8 @@ function forceExitApp() {
 
   // JIKA NATIVE ANDROID
   if (window.AndroidApp) {
-      window.AndroidApp.exitApp();
-      return;
+    window.AndroidApp.exitApp();
+    return;
   }
 
   // 2. JIKA APLIKASI NATIVE (Android/APK via Capacitor/Cordova)
@@ -6886,6 +6899,14 @@ if (typeof firebase !== "undefined" && firebase.messaging.isSupported()) {
     // 2. Tampilkan Popup (LOGIKA LAMA TETAP ADA)
     showInfoModal(title, body, "info");
 
+    // Tembak ke Android Native
+    if (
+      typeof AndroidApp !== "undefined" &&
+      AndroidApp.showSystemNotification
+    ) {
+      AndroidApp.showSystemNotification(title, body);
+    }
+
     // 3. [PENTING] SIMPAN KE RIWAYAT (LocalStorage)
     saveNotificationToStorage(title, body, timestamp);
 
@@ -7357,6 +7378,7 @@ function simpanJadwalManual() {
   setTimeout(() => {
     closeInfoModal();
   }, 5000);
+  sinkronkanAlarmKeNative();
 }
 
 function kirimJadwalKeESP(jadwal) {
@@ -7761,6 +7783,7 @@ function updateJadwalUI(jadwal) {
   if (typeof jadwalSholatHariIni !== "undefined") {
     jadwalSholatHariIni = jadwal;
   }
+  sinkronkanAlarmKeNative();
 }
 
 // ============================================================
@@ -9133,7 +9156,7 @@ function toggleAutoLoginSetting(isChecked) {
 
   // SINKRONISASI DENGAN ANDROID NATIVE LOCKSCREEN
   if (window.AndroidApp) {
-      window.AndroidApp.setAutoLogin(isChecked);
+    window.AndroidApp.setAutoLogin(isChecked);
   }
 }
 
@@ -9147,6 +9170,7 @@ function toggleSuaraAzan(isChecked) {
     `Suara peringatan ${isChecked ? "diaktifkan" : "dimatikan"}.`,
     "info",
   );
+  sinkronkanAlarmKeNative();
 }
 
 /* =========================================
@@ -9653,3 +9677,84 @@ function filterJadwal() {
     }
   });
 }
+
+// Fungsi ini mengubah jam "04:30" menjadi hitungan milidetik untuk dikirim ke Android
+function aturAlarmKeAndroid(tipe, timeString, isAktif) {
+  if (typeof AndroidApp !== "undefined" && AndroidApp.setPrayerAlarm) {
+    if (isAktif) {
+      let now = new Date();
+      let [jam, menit] = timeString.split(":");
+      let waktuAlarm = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        parseInt(jam),
+        parseInt(menit),
+        0,
+      );
+
+      // Jika waktu salat hari ini sudah lewat, jadwalkan untuk besok harinya
+      if (waktuAlarm.getTime() <= now.getTime()) {
+        waktuAlarm.setDate(waktuAlarm.getDate() + 1);
+      }
+
+      // Tembakkan ke Android!
+      AndroidApp.setPrayerAlarm(tipe, waktuAlarm.getTime());
+      console.log(
+        `Berhasil menyetel alarm ${tipe} untuk Android pada ${waktuAlarm}`,
+      );
+    } else {
+      AndroidApp.cancelPrayerAlarm(tipe);
+      console.log(`Alarm ${tipe} dibatalkan dari Android.`);
+    }
+  }
+}
+
+// --- JEMBATAN ALARM WEB KE ANDROID NATIVE ---
+window.sinkronkanAlarmKeNative = function () {
+  if (typeof AndroidApp !== "undefined" && AndroidApp.setPrayerAlarm) {
+    const isSuaraOn = localStorage.getItem("suaraAzanState") !== "OFF";
+    const jadwalStr = localStorage.getItem("myJadwalSholat");
+
+    if (!jadwalStr) return;
+
+    const jadwal = JSON.parse(jadwalStr);
+    const daftarSholat = [
+      "Imsak",
+      "Sahur",
+      "Subuh",
+      "Dzuhur",
+      "Ashar",
+      "Maghrib",
+      "Isya",
+    ];
+
+    daftarSholat.forEach((nama) => {
+      if (!isSuaraOn) {
+        AndroidApp.cancelPrayerAlarm(nama);
+      } else if (jadwal[nama] && jadwal[nama] !== "--:--") {
+        let now = new Date();
+        let [jam, menit] = jadwal[nama].split(":");
+        let waktuAlarm = new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          now.getDate(),
+          parseInt(jam),
+          parseInt(menit),
+          0,
+        );
+
+        // Jika jam sholat ini sudah terlewat hari ini, pasang alarm untuk besok
+        if (waktuAlarm.getTime() <= now.getTime()) {
+          waktuAlarm.setDate(waktuAlarm.getDate() + 1);
+        }
+
+        // Kirim pesan jadwal ke sistem Android
+        AndroidApp.setPrayerAlarm(nama, waktuAlarm.getTime());
+        console.log(
+          `⏰ [NATIVE ALARM] ${nama} disetel ke sistem HP: ${waktuAlarm.toLocaleString()}`,
+        );
+      }
+    });
+  }
+};

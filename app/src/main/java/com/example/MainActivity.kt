@@ -52,6 +52,54 @@ class AndroidAppInterface(private val activity: FragmentActivity) {
         activity.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
             .edit().putBoolean("auto_login", enabled).apply()
     }
+@android.webkit.JavascriptInterface
+    fun setPrayerAlarm(type: String, timeInMillis: Long) {
+        try {
+            val alarmManager = activity.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val intent = android.content.Intent(activity, PrayerAlarmReceiver::class.java).apply {
+                putExtra("ALARM_TYPE", type)
+            }
+            val pendingIntent = android.app.PendingIntent.getBroadcast(
+                activity, type.hashCode(), intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+            // Tembak alarm langsung ke sistem inti HP
+            alarmManager.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        }
+    }
+
+    @android.webkit.JavascriptInterface
+    fun cancelPrayerAlarm(type: String) {
+        val alarmManager = activity.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        val intent = android.content.Intent(activity, PrayerAlarmReceiver::class.java)
+        val pendingIntent = android.app.PendingIntent.getBroadcast(
+            activity, type.hashCode(), intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.cancel(pendingIntent)
+    }
+    @android.webkit.JavascriptInterface
+    fun showSystemNotification(title: String, message: String) {
+        val channelId = "GENERAL_CHANNEL"
+        val notificationManager = activity.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(channelId, "Informasi Sistem", android.app.NotificationManager.IMPORTANCE_DEFAULT)
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = androidx.core.app.NotificationCompat.Builder(activity, channelId)
+            .setSmallIcon(R.drawable.ic_notification) // Menggunakan logo putih milikmu
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setAutoCancel(true)
+            .build()
+            
+        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+    }
 }
 
 class MainActivity : FragmentActivity() {
@@ -78,12 +126,20 @@ class MainActivity : FragmentActivity() {
         
         isUnlocked = getSharedPreferences("app_prefs", Context.MODE_PRIVATE).getBoolean("auto_login", false)
 
-        val permissionsToRequest = arrayOf(
+// 1. Daftar izin dasar
+        val permissionsList = mutableListOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO,
             Manifest.permission.ACCESS_FINE_LOCATION,
             Manifest.permission.ACCESS_COARSE_LOCATION
         )
+
+        // 2. Tambahkan izin Notifikasi khusus jika HP menggunakan Android 13 ke atas
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissionsList.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        val permissionsToRequest = permissionsList.toTypedArray()
 
         val hasAllPermissions = permissionsToRequest.all {
             ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
