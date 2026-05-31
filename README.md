@@ -12,16 +12,15 @@ Untuk memulai pengembangan atau sekadar memindahkan _project_ ini ke komputer ba
 2. Klik kanan pada area kosong di dalam folder tersebut, lalu pilih **Open in Terminal** (atau Git Bash Here).
 3. Eksekusi perintah kloning berikut untuk mengunduh seluruh _source code_:
 
-````powershell
+```powershell
    git clone [URL_GITHUB_PROJECT_KAMU]
-
+```
 
 4. Setelah proses unduhan selesai, masuk ke dalam direktori _project_ yang baru saja dibuat:
 
 ```powershell
    cd apkiotdashboard
-
-````
+```
 
 5. Buka _project_ tersebut langsung di Visual Studio Code dengan perintah:
 
