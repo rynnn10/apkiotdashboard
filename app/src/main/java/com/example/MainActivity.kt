@@ -39,8 +39,10 @@ import androidx.fragment.app.FragmentActivity
 import com.example.ui.theme.MyApplicationTheme
 
 import android.os.Build
+import android.speech.tts.TextToSpeech
+import java.util.Locale
 
-class AndroidAppInterface(private val activity: FragmentActivity) {
+class AndroidAppInterface(private val activity: FragmentActivity, private val webView: WebView?) {
     @android.webkit.JavascriptInterface
     fun exitApp() {
         activity.runOnUiThread {
@@ -90,19 +92,93 @@ class AndroidAppInterface(private val activity: FragmentActivity) {
             notificationManager.createNotificationChannel(channel)
         }
 
-        val notification = androidx.core.app.NotificationCompat.Builder(activity, channelId)
-            .setSmallIcon(R.drawable.ic_notification) // Menggunakan logo putih milikmu
-            .setContentTitle(title)
-            .setContentText(message)
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .build()
-            
-        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+        try {
+            // create intent to open app and pass notification data
+            val notifId = System.currentTimeMillis().toInt()
+            val intent = android.content.Intent(activity, MainActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("notif_title", title)
+                putExtra("notif_message", message)
+                putExtra("notif_id", notifId)
+            }
+            val pending = android.app.PendingIntent.getActivity(
+                activity,
+                notifId,
+                intent,
+                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = androidx.core.app.NotificationCompat.Builder(activity, channelId)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .setContentIntent(pending)
+                .build()
+
+            notificationManager.notify(notifId, notification)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Simple TextToSpeech bridge for WebView to call
+    private var tts: TextToSpeech? = null
+
+    @android.webkit.JavascriptInterface
+    fun speak(text: String) {
+        try {
+            if (tts == null) {
+                tts = TextToSpeech(activity.applicationContext) { status ->
+                    if (status == TextToSpeech.SUCCESS) {
+                        try {
+                            tts?.language = Locale("id", "ID")
+                        } catch (e: Exception) {}
+                    }
+                }
+            }
+            tts?.setPitch(1.0f)
+            tts?.setSpeechRate(1.0f)
+
+            // Set utterance progress listener to notify WebView when done
+            try {
+                tts?.setOnUtteranceProgressListener(object : android.speech.tts.UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String) {}
+                    override fun onError(utteranceId: String) {
+                        try {
+                            webView?.post { webView.evaluateJavascript("typeof window.onNativeTtsError === 'function' && window.onNativeTtsError();", null) }
+                        } catch (e: Exception) {}
+                    }
+                    override fun onDone(utteranceId: String) {
+                        try {
+                            webView?.post { webView.evaluateJavascript("typeof window.onNativeTtsEnd === 'function' && window.onNativeTtsEnd();", null) }
+                        } catch (e: Exception) {}
+                    }
+                })
+            } catch (e: Exception) {}
+
+            tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "WEBVIEW_TTS")
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    @android.webkit.JavascriptInterface
+    fun stopSpeak() {
+        try {
+            tts?.stop()
+            webView?.post { webView.evaluateJavascript("typeof window.onNativeTtsEnd === 'function' && window.onNativeTtsEnd();", null) }
+        } catch (e: Exception) {}
     }
 }
 
 class MainActivity : FragmentActivity() {
+
+    companion object {
+        // hold last created WebView so MainActivity can call evaluateJavascript
+        var currentWebView: WebView? = null
+    }
 
     override fun attachBaseContext(newBase: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -169,6 +245,26 @@ class MainActivity : FragmentActivity() {
                         WebViewScreen(this@MainActivity)
                     }
                 }
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent == null) return
+        // ensure activity intent is updated
+        setIntent(intent)
+        val title = intent.getStringExtra("notif_title")
+        val message = intent.getStringExtra("notif_message")
+        val id = intent.getIntExtra("notif_id", -1)
+        if (title != null) {
+            try {
+                val js = "window.__openNativeNotification && window.__openNativeNotification(`{" +
+                        "\"id\":$id,\"title\":\"" + title.replace("\"", "\\\"") + "\",\"message\":\"" +
+                        (message?:"").replace("\"", "\\\"") + "\"}`);"
+                currentWebView?.post { currentWebView?.evaluateJavascript(js, null) }
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
         }
     }
@@ -324,7 +420,9 @@ fun WebViewScreen(activity: FragmentActivity) {
                     setGeolocationEnabled(true)
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                 }
-                addJavascriptInterface(AndroidAppInterface(activity), "AndroidApp")
+                addJavascriptInterface(AndroidAppInterface(activity, this), "AndroidApp")
+                // expose this WebView to MainActivity companion for intent callbacks
+                MainActivity.currentWebView = this
                 webViewClient = object : WebViewClient() {
                     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                         return false
@@ -346,6 +444,20 @@ fun WebViewScreen(activity: FragmentActivity) {
                                 tokenScript + " if(typeof unlockApp === 'function'){unlockApp(true);}", 
                                 null
                             )
+
+                            // If activity was launched from notification click, forward to JS after page ready
+                            try {
+                                val intent = activity.intent
+                                val title = intent.getStringExtra("notif_title")
+                                val message = intent.getStringExtra("notif_message")
+                                val id = intent.getIntExtra("notif_id", -1)
+                                if (title != null) {
+                                    val js = "window.__openNativeNotification && window.__openNativeNotification(`{" +
+                                            "\"id\":$id,\"title\":\"" + title.replace("\"", "\\\"") + "\",\"message\":\"" +
+                                            (message?:"").replace("\"", "\\\"") + "\"}`);"
+                                    view?.post { view.evaluateJavascript(js, null) }
+                                }
+                            } catch (e: Exception) {}
                         }
                     }
                 }

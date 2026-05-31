@@ -3950,6 +3950,34 @@ function execDeleteButton(btnId) {
 const synthesis = window.speechSynthesis;
 let recognition; // Untuk Web Browser
 let isListening = false;
+let isProcessingCommand = false; // true saat sedang memproses perintah (TTS / aksi)
+let _processTimeoutId = null; // safety timeout untuk mencegah stuck
+// Pending confirmation state when multiple targets found
+let pendingConfirmation = null; // { intentVerb: 'nyalakan'|'matikan'|'cek', originalText: '', timeoutId: <id> }
+
+function restartMicIfNeeded(delay = 500) {
+  if (isProcessingCommand) return; // jangan restart jika masih memproses
+  if (isListening) return; // sudah menyala
+  const overlay = document.getElementById("voice-overlay");
+  if (overlay && overlay.classList.contains("hidden")) return; // user closed
+
+  isListening = true;
+  const micIcon = document.getElementById("mic-icon");
+  if (micIcon) micIcon.className = "fa-solid fa-spinner fa-spin text-2xl";
+
+  setTimeout(() => {
+    try {
+      if (recognition) recognition.start();
+    } catch (e) {
+      console.warn("Restart mic failed, retrying...", e);
+      setTimeout(() => {
+        try {
+          if (recognition) recognition.start();
+        } catch (e2) {}
+      }, 1000);
+    }
+  }, delay);
+}
 
 // Fungsi Utama Toggle (Dipanggil Tombol Mic)
 async function toggleVoiceCommand() {
@@ -4000,6 +4028,32 @@ async function startVoiceCommand() {
             `"${data.matches[0]}"`;
         }
       });
+
+      // Tambahkan listener untuk event final hasil jika tersedia pada plugin
+      try {
+        NativeSpeechRec.addListener("speechResult", (data) => {
+          const text =
+            (data && data.matches && data.matches[0]) || data.value || data;
+          console.log("🔉 Native final result (speechResult):", text);
+          if (text) prosesPerintahSuara(String(text));
+        });
+      } catch (e) {}
+      try {
+        NativeSpeechRec.addListener("results", (data) => {
+          const text =
+            (data && data.matches && data.matches[0]) || data.value || data;
+          console.log("🔉 Native final result (results):", text);
+          if (text) prosesPerintahSuara(String(text));
+        });
+      } catch (e) {}
+      try {
+        NativeSpeechRec.addListener("finalResult", (data) => {
+          const text =
+            (data && data.matches && data.matches[0]) || data.value || data;
+          console.log("🔉 Native final result (finalResult):", text);
+          if (text) prosesPerintahSuara(String(text));
+        });
+      } catch (e) {}
     } catch (e) {
       console.error("Native Speech Error:", e);
       stopVoiceCommand();
@@ -4068,8 +4122,18 @@ async function startVoiceCommand() {
         recognition.onend = () => {
           if (voiceStuckTimer) clearTimeout(voiceStuckTimer);
 
+          // Jika sedang memproses perintah, jangan langsung restart di sini.
+          if (isProcessingCommand) {
+            // onend dari recognition yang dipicu saat kita stop() untuk proses.
+            // Biarkan proses (TTS/aksi) menyelesaikan dan panggil restartMicIfNeeded di akhir.
+            console.log(
+              "ℹ️ Mic onend while processing command, waiting for TTS to finish...",
+            );
+            isListening = false;
+            return;
+          }
+
           // --- [PERBAIKAN] CEK VISIBILITAS OVERLAY ---
-          // Hanya restart mic jika flag isListening TRUE **DAN** Overlay TERLIHAT
           const overlay = document.getElementById("voice-overlay");
           const isOverlayVisible =
             overlay && !overlay.classList.contains("hidden");
@@ -4079,17 +4143,16 @@ async function startVoiceCommand() {
             try {
               recognition.start();
             } catch (e) {
-              // Retry safety
               setTimeout(() => {
-                // Cek lagi sebelum start
-                if (
-                  isListening &&
-                  !document
-                    .getElementById("voice-overlay")
-                    .classList.contains("hidden")
-                ) {
-                  recognition.start();
-                }
+                try {
+                  if (
+                    isListening &&
+                    !document
+                      .getElementById("voice-overlay")
+                      .classList.contains("hidden")
+                  )
+                    recognition.start();
+                } catch (e2) {}
               }, 1000);
             }
           } else {
@@ -4099,8 +4162,6 @@ async function startVoiceCommand() {
             );
             const micIcon = document.getElementById("mic-icon");
             if (micIcon) micIcon.className = "fa-solid fa-microphone text-2xl";
-
-            // Pastikan flag mati
             isListening = false;
           }
         };
@@ -4117,27 +4178,41 @@ async function startVoiceCommand() {
           }, 5000);
 
           const transcript = event.results[0][0].transcript.toLowerCase();
-          document.getElementById("voice-text-preview").innerText =
-            `"${transcript}"`;
+          const previewEl = document.getElementById("voice-text-preview");
+          if (previewEl) previewEl.innerText = `"${transcript}"`;
 
           if (event.results[0].isFinal) {
             clearTimeout(voiceStuckTimer);
 
-            // [FIX BUG VOICE LOOP]
-            // 1. Set flag false agar 'onend' tidak otomatis restart mic saat ini
-            isListening = false;
+            // Tandai bahwa sekarang kita memproses perintah sehingga onend tidak otomatis restart mic
+            isProcessingCommand = true;
+            if (_processTimeoutId) clearTimeout(_processTimeoutId);
+            // Safety: jika tidak ada TTS/aksi selesai dalam 8 detik, reset state agar tidak stuck
+            _processTimeoutId = setTimeout(() => {
+              isProcessingCommand = false;
+              restartMicIfNeeded(0);
+            }, 8000);
 
-            // 2. Matikan mic secara paksa agar hening saat sistem memproses jawaban
+            // Matikan mic agar hening saat sistem memproses jawaban
             try {
               recognition.stop();
             } catch (e) {}
 
-            // 3. Proses perintah (Mic dalam keadaan MATI sekarang)
+            // Proses perintah (Mic dalam keadaan MATI sekarang)
             prosesPerintahSuara(transcript);
           }
         };
       } else {
-        alert("Browser tidak support Voice Command.");
+        // WebView/browser tidak mendukung Web Speech API.
+        // Gunakan TTS untuk memberitahu pengguna (alert mungkin tidak terlihat di WebView).
+        try {
+          await bicara(
+            "Perangkat ini tidak mendukung Voice Command pada mode WebView. Silakan gunakan tombol mic atau jalankan di browser yang mendukung.",
+            true,
+          );
+        } catch (e) {
+          console.warn("TTS fallback gagal:", e);
+        }
         stopVoiceCommand();
         return;
       }
@@ -4154,6 +4229,12 @@ async function startVoiceCommand() {
 function stopVoiceCommand() {
   console.log("⛔ Menghentikan Voice Command...");
   isListening = false;
+  // Clear processing flag and any safety timeout
+  isProcessingCommand = false;
+  if (_processTimeoutId) {
+    clearTimeout(_processTimeoutId);
+    _processTimeoutId = null;
+  }
 
   // 1. Stop Native (Bungkus dengan Try Catch)
   if (isNative && NativeSpeechRec) {
@@ -4315,13 +4396,17 @@ async function bicara(teks, autoClose = false, callback = null) {
       // [FIX BUG VOICE LOOP - NATIVE]
       if (callback) callback();
 
+      // Clear processing flag and safety timeout
+      isProcessingCommand = false;
+      if (_processTimeoutId) clearTimeout(_processTimeoutId);
+
       if (autoClose) {
         // Jika perintah selesai (misal: "Matikan lampu"), tutup mic total
         stopVoiceCommand();
       } else {
-        // Jika perintah butuh balasan/lanjutan, NYALAKAN mic lagi sekarang
+        // Jika perintah butuh balasan/lanjutan, restart mic via helper
         console.log("🔊 Native TTS Selesai -> Restart Mic...");
-        setTimeout(() => startVoiceCommand(), 500); // Delay dikit biar gak tabrakan
+        restartMicIfNeeded(500);
       }
     } catch (e) {
       console.error("⚠️ Gagal TTS Native, mencoba browser...", e);
@@ -4329,6 +4414,34 @@ async function bicara(teks, autoClose = false, callback = null) {
     }
   } else {
     // --- JALUR WEBSITE / LAPTOP (BROWSER) ---
+    // Jika Web Speech API tidak tersedia di WebView, coba bridge AndroidApp.speak
+    if (
+      !window.speechSynthesis &&
+      window.AndroidApp &&
+      typeof window.AndroidApp.speak === "function"
+    ) {
+      try {
+        // gunakan native TTS bridge dan tunggu callback dari native (lebih akurat)
+        isProcessingCommand = true;
+        if (_processTimeoutId) clearTimeout(_processTimeoutId);
+        // safety timeout jika callback native tidak dipanggil
+        _processTimeoutId = setTimeout(() => {
+          isProcessingCommand = false;
+          restartMicIfNeeded(0);
+          window.__bicara_pending = null;
+        }, 15000);
+
+        // simpan pending callback/autoClose agar onNativeTtsEnd dapat mengeksekusinya
+        window.__bicara_pending = {
+          callback: callback,
+          autoClose: !!autoClose,
+        };
+        window.AndroidApp.speak(teks);
+        return;
+      } catch (e) {
+        console.warn("AndroidApp.speak failed:", e);
+      }
+    }
     bicaraBrowser(teks, autoClose, callback);
   }
 }
@@ -4344,6 +4457,9 @@ function bicaraBrowser(teks, autoClose, callback) {
 
   utterance.onend = function () {
     if (callback) callback();
+    // Clear processing flag and safety timeout
+    isProcessingCommand = false;
+    if (_processTimeoutId) clearTimeout(_processTimeoutId);
 
     // [FIX BUG VOICE LOOP - BROWSER]
     if (autoClose) {
@@ -4351,15 +4467,55 @@ function bicaraBrowser(teks, autoClose, callback) {
     } else {
       // Mic dinyalakan KEMBALI hanya setelah suara sistem selesai
       console.log("🔊 Browser TTS Selesai -> Restart Mic...");
-      setTimeout(() => {
-        // Cek ulang agar tidak tumpang tindih
-        startVoiceCommand();
-      }, 500);
+      restartMicIfNeeded(500);
     }
   };
 
   window.speechSynthesis.speak(utterance);
 }
+
+// Global pending state used when native TTS is invoked from JS
+window.__bicara_pending = null;
+
+// Called by native Android when TTS finishes
+window.onNativeTtsEnd = function () {
+  try {
+    const pending = window.__bicara_pending || {};
+    if (pending.callback && typeof pending.callback === "function") {
+      try {
+        pending.callback();
+      } catch (e) {
+        console.warn("bicara callback error:", e);
+      }
+    }
+    isProcessingCommand = false;
+    if (_processTimeoutId) {
+      clearTimeout(_processTimeoutId);
+      _processTimeoutId = null;
+    }
+    if (pending.autoClose) {
+      stopVoiceCommand();
+    } else {
+      restartMicIfNeeded(500);
+    }
+  } finally {
+    window.__bicara_pending = null;
+  }
+};
+
+window.onNativeTtsError = function () {
+  // On error, behave like end to recover microphone
+  try {
+    isProcessingCommand = false;
+    if (_processTimeoutId) {
+      clearTimeout(_processTimeoutId);
+      _processTimeoutId = null;
+    }
+    restartMicIfNeeded(500);
+  } finally {
+    window.__bicara_pending = null;
+  }
+};
 
 function bicaraRobot(teks, stopListening, callback = null) {
   const ucapan = new SpeechSynthesisUtterance(teks);
@@ -4376,292 +4532,432 @@ function selesaiBicara(stopListening, callback) {
     console.log("✅ Menjalankan aksi setelah bicara...");
     callback();
   }
+  // Clear processing flag
+  isProcessingCommand = false;
+  if (_processTimeoutId) clearTimeout(_processTimeoutId);
+
   if (stopListening) {
     stopVoiceCommand();
   } else {
-    if (isListening === !1) return;
     try {
       const preview = document.getElementById("voice-text-preview");
       if (preview) preview.innerText = "Mendengarkan lagi...";
-      recognition.start();
+      restartMicIfNeeded(200);
     } catch (e) {}
   }
 }
 function prosesPerintahSuara(teks) {
   console.log("Mendeteksi suara:", teks);
-  let responsSuara = "";
-  let aksiDitemukan = false;
 
-  // ==========================================
-  // 1. BLOK NAVIGASI (Bisa jalan bersamaan dengan aksi perangkat)
-  // ==========================================
-  if (
-    teks.includes("buka") ||
-    teks.includes("pergi ke") ||
-    teks.includes("tampilkan") ||
-    teks.includes("menu")
-  ) {
-    if (teks.includes("kontrol") || teks.includes("smart control")) {
-      switchPage(
-        "page-control",
-        document.querySelector(".nav-item:nth-child(4)"),
-      );
-      responsSuara += "Membuka pusat kontrol. ";
-      aksiDitemukan = true;
-    } else if (teks.includes("cuaca")) {
-      switchPage(
-        "page-cuaca",
-        document.querySelector(".nav-item:nth-child(8)"),
-      );
-      responsSuara += "Menampilkan informasi cuaca. ";
-      aksiDitemukan = true;
-    } else if (teks.includes("wajah") || teks.includes("absensi")) {
-      switchPage(
-        "page-absensi",
-        document.querySelector(".nav-item:nth-child(2)"),
-      );
-      responsSuara += "Membuka scan wajah. ";
-      aksiDitemukan = true;
-    } else if (teks.includes("cctv") || teks.includes("kamera")) {
-      switchPage(
-        "page-youtube",
-        document.querySelector(".nav-item:nth-child(11)"),
-      );
-      responsSuara += "Membuka pantauan CCTV. ";
-      aksiDitemukan = true;
-    } else if (teks.includes("sensor") || teks.includes("suhu")) {
-      switchPage(
-        "page-sensor",
-        document.querySelector(".nav-item:nth-child(3)"),
-      );
-      responsSuara += "Membuka monitor sensor. ";
-      aksiDitemukan = true;
-    }
-  }
+  // Normalisasi teks (huruf kecil semua, hilangkan tanda baca titik/koma dari Android)
+  let t = teks.toLowerCase().replace(/[.,?!]/g, "");
+  // Jika ada pending confirmation, tangani jawaban singkat (ya/tidak) atau target spesifik
+  if (pendingConfirmation) {
+    const reply = t.trim();
+    const affirm = ["ya", "iya", "oke", "ok", "yes", "y", "betul", "lanjut"];
+    const neg = ["tidak", "enggak", "batal", "ga", "gak", "no"];
 
-  // ==========================================
-  // 2. BLOK KONTROL HARDWARE (Bisa dijalankan bersama navigasi)
-  // ==========================================
-  if (teks.includes("kipas") || teks.includes("angin")) {
-    if (teks.includes("1") || teks.includes("satu") || teks.includes("pelan")) {
-      controlFan(1, !0);
-      responsSuara += "Kipas menyala kecepatan satu. ";
-      aksiDitemukan = true;
-    } else if (
-      teks.includes("2") ||
-      teks.includes("dua") ||
-      teks.includes("sedang")
-    ) {
-      controlFan(2, !0);
-      responsSuara += "Kipas menyala kecepatan dua. ";
-      aksiDitemukan = true;
-    } else if (
-      teks.includes("3") ||
-      teks.includes("tiga") ||
-      teks.includes("maksimal") ||
-      teks.includes("kencang")
-    ) {
-      controlFan(3, !0);
-      responsSuara += "Kipas menyala maksimal. ";
-      aksiDitemukan = true;
-    } else if (
-      teks.includes("mati") ||
-      teks.includes("nol") ||
-      teks.includes("off")
-    ) {
-      controlFan(0, !0);
-      responsSuara += "Kipas dimatikan. ";
-      aksiDitemukan = true;
-    }
-  }
-
-  if (teks.includes("pintu")) {
-    if (teks.includes("buka")) {
-      controlDoor("UNLOCK", !0);
-      responsSuara += "Pintu berhasil dibuka 10 detik. ";
-      aksiDitemukan = true;
-    } else if (teks.includes("kunci") || teks.includes("tutup")) {
-      controlDoor("LOCK", !0);
-      responsSuara += "Pintu telah dikunci. ";
-      aksiDitemukan = true;
-    }
-  }
-
-  // Eksekusi jika terjadi kombinasi perintah (Navigasi + Alat)
-  if (aksiDitemukan) {
-    bicara(responsSuara, !0);
-    return; // Hentikan fungsi di sini agar tidak membaca logika lama di bawahnya
-  }
-
-  // ==========================================
-  // 3. LOGIKA LAMA KAMU YANG TIDAK DIUBAH (Musik, Info, Sensor, dll)
-  // ==========================================
-  if (
-    teks.includes("terima kasih") ||
-    teks.includes("makasih") ||
-    teks.includes("cukup") ||
-    teks.includes("sudah")
-  ) {
-    bicara(
-      "Sama-sama tuan. Senang bisa membantu Anda. Voice Command ditutup.",
-      !0,
-    );
-  } else if (
-    teks.includes("keluar aplikasi") ||
-    teks.includes("tutup aplikasi") ||
-    teks.includes("keluar dari dashboard") ||
-    teks.includes("exit")
-  ) {
-    bicara("Baik tuan. Menutup aplikasi. Sampai jumpa.", !0, () => {
-      showExitConfirmation();
-    });
-  } else if (
-    teks.includes("mainkan musik") ||
-    teks.includes("putar musik") ||
-    teks.includes("nyalakan lagu") ||
-    teks.includes("nyalakan musik")
-  ) {
-    let keyword = teks
-      .replace("mainkan musik", "")
-      .replace("putar musik", "")
-      .replace("putar lagu", "")
-      .replace("mainkan lagu", "")
-      .replace("nyalakan lagu", "")
-      .replace("nyalakan musik", "")
-      .trim();
-    if (keyword.length > 2) {
-      searchYouTube(keyword);
+    if (affirm.includes(reply)) {
+      const chosen =
+        (pendingConfirmation.targets && pendingConfirmation.targets[0]) || "";
+      t = `${pendingConfirmation.intentVerb} ${chosen}`.trim();
+    } else if (neg.includes(reply)) {
+      bicara("Oke, saya batalkan perintah voice.", true);
+      if (pendingConfirmation.timeoutId)
+        clearTimeout(pendingConfirmation.timeoutId);
+      pendingConfirmation = null;
       return;
-    }
-    if (
-      typeof YT === "undefined" ||
-      typeof player === "undefined" ||
-      !player.loadPlaylist
-    ) {
-      bicara("Sistem musik sedang disiapkan, coba lagi.", true);
-      onYouTubeIframeAPIReady();
-      return;
-    }
-    const ytData = getYoutubeData(YOUTUBE_LINK);
-    try {
-      if (player && typeof player.setVolume === "function")
-        player.setVolume(100);
-      if (ytData.listId) {
-        player.stopVideo();
-        player.loadPlaylist({
-          listType: "playlist",
-          list: ytData.listId,
-          index: 0,
-          startSeconds: 0,
-        });
-        player.setLoop(true);
-        setTimeout(() => {
-          player.playVideo();
-        }, 1000);
-      } else if (ytData.videoId) {
-        player.loadVideoById(ytData.videoId);
-        setTimeout(() => {
-          player.playVideo();
-        }, 500);
-      } else {
-        player.playVideo();
-      }
-      isMusicPlaying = true;
-      pausedByVoice = false;
-      bicara("Memutar playlist musik favorit Anda.", true);
-    } catch (e) {
-      alert("Gagal memutar otomatis. Silakan tekan tombol Play.");
-    }
-  } else if (
-    teks.includes("matikan musik") ||
-    teks.includes("stop musik") ||
-    teks.includes("berhenti lagu")
-  ) {
-    controlMusic("STOP");
-    pausedByVoice = !1;
-    bicara("Musik dihentikan secara permanen.", !0);
-  } else if (
-    teks.includes("ganti lagu") ||
-    teks.includes("ganti musik") ||
-    teks.includes("lagu selanjutnya")
-  ) {
-    if (player && typeof player.nextVideo === "function") {
-      player.nextVideo();
-      pausedByVoice = !1;
-      isMusicPlaying = !0;
-      bicara("Memutar lagu selanjutnya.", !0);
     } else {
-      bicara("Maaf, player belum siap.", !0);
+      // treat reply as explicit target name
+      t = `${pendingConfirmation.intentVerb} ${t}`.trim();
     }
-  } else if (
-    teks.includes("tambah kartu") ||
-    teks.includes("registrasi kartu") ||
-    teks.includes("daftar kartu")
-  ) {
-    openRfidModal();
-    bicara("Membuka menu registrasi kartu RFID. Silakan tempel kartu.", !0);
-  } else if (
-    teks.includes("cek kartu") ||
-    teks.includes("info kartu") ||
-    teks.includes("siapa saja yang terdaftar")
-  ) {
-    bicara("Sedang mengambil data database, mohon tunggu sebentar...");
-    fetch(GAS_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data || data.length === 0) {
-          bicara("Database kosong. Belum ada kartu terdaftar.", !0);
-          return;
-        }
-        const total = data.length;
-        let spokenNames =
-          total <= 5
-            ? data.map((u) => u.name).join(", ")
-            : `${data
-                .map((u) => u.name)
-                .slice(0, 5)
-                .join(", ")}, dan ${total - 5} orang lainnya`;
-        let htmlList = `<div class="bg-slate-900/50 p-2 rounded-lg mb-2 text-xs text-slate-400">Total: ${total} Kartu</div><ul class="text-left space-y-2 max-h-60 overflow-y-auto pr-1">`;
-        data.forEach((u) => {
-          htmlList += `<li class="bg-slate-700 p-3 rounded-lg flex justify-between items-center border border-slate-600"><div class="flex items-center gap-2"><i class="fa-solid fa-id-card text-emerald-500"></i><span class="font-bold text-white text-sm">${u.name}</span></div><span class="font-mono text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded">${u.uid}</span></li>`;
-        });
-        htmlList += `</ul>`;
-        showInfoModal("Database RFID", htmlList, "info");
-        bicara(
-          `Ditemukan ${total} kartu terdaftar. Pemiliknya adalah: ${spokenNames}.`,
-          !0,
-        );
-      })
-      .catch((e) => {
-        bicara("Maaf, gagal mengambil data dari server.", !0);
-      });
-  } else if (
-    teks.includes("status kipas") ||
-    teks.includes("cek kipas") ||
-    teks.includes("info kipas")
+
+    if (pendingConfirmation.timeoutId)
+      clearTimeout(pendingConfirmation.timeoutId);
+    pendingConfirmation = null;
+    console.log("🔔 Menggunakan jawaban konfirmasi ->", t);
+  }
+  let responsSuara = "";
+
+  // VARIABLE KUNCI: false = mic otomatis hidup lagi, true = mic mati total
+  let tutupMic = false;
+
+  // ==========================================
+  // 1. PERINTAH KELUAR / STOP VOICE (Mematikan Mic Total)
+  // ==========================================
+  if (
+    t.includes("terima kasih") ||
+    t.includes("makasih") ||
+    t.includes("cukup") ||
+    t.includes("selesai") ||
+    t.includes("tutup suara") ||
+    t.includes("matikan voice") ||
+    t.includes("matikan suara") ||
+    t.includes("nonaktifkan voice") ||
+    t.includes("nonaktifkan suara") ||
+    t.includes("voice off") ||
+    t.includes("stop voice")
   ) {
     bicara(
-      currentFanSpeed <= 0
-        ? "Kipas saat ini dalam kondisi mati."
-        : `Kipas menyala pada kecepatan ${currentFanSpeed}.`,
-      !0,
+      "Sama-sama. Senang bisa membantu Anda. Voice Command dinonaktifkan.",
+      true,
     );
-  } else if (
-    teks.includes("status kunci") ||
-    teks.includes("cek kunci") ||
-    teks.includes("kondisi kunci")
+    return;
+  }
+  if (
+    t.includes("keluar aplikasi") ||
+    t.includes("tutup aplikasi") ||
+    t.includes("exit")
   ) {
     bicara(
-      isDoorLocked
-        ? "Pintu saat ini TERKUNCI aman."
-        : "Kunci saat ini dalam kondisi TERBUKA.",
-      !0,
+      "Baik tuan. Menutup sistem utama. Sampai jumpa kembali.",
+      true,
+      () => {
+        showExitConfirmation();
+      },
     );
-  } else if (
-    teks.includes("status sensor") ||
-    teks.includes("cek sensor") ||
-    teks.includes("laporan sistem")
+    return;
+  }
+
+  // ==========================================
+  // 2. ANALISA NIAT (INTENT) & ALAT (TARGET)
+  // ==========================================
+  // Cari tau NIAT user
+  let niatNyala = [
+    "hidupkan",
+    "nyalakan",
+    "aktifkan",
+    "pasang",
+    "putar",
+    "buka",
+    "on",
+  ].some((w) => t.includes(w));
+  let niatMati = [
+    "matikan",
+    "nonaktifkan",
+    "hentikan",
+    "tutup",
+    "stop",
+    "jeda",
+    "off",
+  ].some((w) => t.includes(w));
+  let niatCek = [
+    "status",
+    "cek",
+    "info",
+    "laporan",
+    "berapa",
+    "gimana",
+    "apakah",
+  ].some((w) => t.includes(w));
+
+  // capture detected intent verb for possible follow-up confirmation
+  const detectedIntentVerb = niatNyala
+    ? "nyalakan"
+    : niatMati
+      ? "matikan"
+      : niatCek
+        ? "cek"
+        : null;
+
+  // Cari tau ALAT / TARGET yang dimaksud
+  let targetKipas =
+    t.includes("kipas") || t.includes("angin") || t.includes("fan");
+  let targetPintu =
+    t.includes("pintu") ||
+    t.includes("door") ||
+    t.includes("kunci") ||
+    t.includes("akses");
+  let targetLaser = t.includes("laser") || t.includes("jebakan");
+  let targetGerak =
+    t.includes("gerak") || t.includes("pergerakan") || t.includes("ir");
+  let targetJarak = t.includes("jarak") || t.includes("ultrasonik");
+  let targetApi =
+    t.includes("api") || t.includes("kebakaran") || t.includes("panas");
+  let targetMusik =
+    t.includes("musik") ||
+    t.includes("lagu") ||
+    t.includes("youtube") ||
+    t.includes("radio");
+  let targetSuhu = t.includes("suhu") || t.includes("temperatur");
+  let targetCuaca =
+    t.includes("cuaca") || t.includes("iklim") || t.includes("hujan");
+  let targetCctv =
+    t.includes("cctv") || t.includes("kamera") || t.includes("pantauan");
+  let targetNavigasi =
+    t.includes("kontrol") ||
+    t.includes("dashboard") ||
+    t.includes("absensi") ||
+    t.includes("wajah");
+
+  let totalTarget = [
+    targetKipas,
+    targetPintu,
+    targetLaser,
+    targetGerak,
+    targetJarak,
+    targetApi,
+    targetMusik,
+    targetSuhu,
+    targetCuaca,
+    targetCctv,
+    targetNavigasi,
+  ].filter(Boolean).length;
+
+  // ==========================================
+  // 3. LOGIKA INTERAKTIF (AMBIGU / LEBIH DARI 1 PERINTAH)
+  // ==========================================
+  if (
+    (niatNyala || niatMati || niatCek) &&
+    totalTarget === 0 &&
+    !t.includes("semua")
   ) {
+    let responTanya = [
+      "Maaf, apa yang ingin Anda " +
+        (niatNyala ? "nyalakan?" : niatMati ? "matikan?" : "cek?"),
+      "Tolong sebutkan nama alatnya.",
+      "Perangkat mana yang Anda maksud? Kipas, sensor, atau pintu?",
+    ];
+    bicara(responTanya[Math.floor(Math.random() * responTanya.length)], false);
+    return;
+  }
+
+  if (totalTarget > 1 && !t.includes("semua")) {
+    // Jika ada lebih dari satu target, minta konfirmasi ke user
+    const targets = [];
+    if (targetKipas) targets.push("kipas");
+    if (targetPintu) targets.push("pintu");
+    if (targetLaser) targets.push("laser");
+    if (targetGerak) targets.push("sensor gerak");
+    if (targetJarak) targets.push("ultrasonik");
+    if (targetApi) targets.push("sensor api");
+    if (targetMusik) targets.push("musik");
+    if (targetSuhu) targets.push("suhu");
+    if (targetCuaca) targets.push("cuaca");
+    if (targetCctv) targets.push("kamera/cctv");
+
+    const listStr =
+      targets.slice(0, 3).join(", ") +
+      (targets.length > 3 ? ", dan lainnya" : "");
+    const prompt = `Saya menemukan beberapa target: ${listStr}. Perintah mana yang Anda maksud? Sebutkan nama perangkat.`;
+
+    // simpan state pending confirmation
+    if (pendingConfirmation && pendingConfirmation.timeoutId)
+      clearTimeout(pendingConfirmation.timeoutId);
+    pendingConfirmation = {
+      intentVerb: detectedIntentVerb || "",
+      originalText: teks,
+      targets: targets,
+      timeoutId: setTimeout(() => {
+        pendingConfirmation = null;
+      }, 15000), // clear after 15s
+    };
+
+    bicara(prompt, false);
+    return;
+  }
+
+  // ==========================================
+  // 4. EKSEKUSI PERANGKAT
+  // ==========================================
+
+  // --- KIPAS ---
+  if (targetKipas) {
+    if (
+      niatNyala ||
+      t.includes("1") ||
+      t.includes("2") ||
+      t.includes("3") ||
+      t.includes("pelan") ||
+      t.includes("sedang") ||
+      t.includes("kencang") ||
+      t.includes("maksimal")
+    ) {
+      if (t.includes("2") || t.includes("sedang")) {
+        controlFan(2, true);
+        responsSuara = "Kipas menyala di kecepatan dua.";
+      } else if (
+        t.includes("3") ||
+        t.includes("kencang") ||
+        t.includes("maksimal") ||
+        t.includes("penuh")
+      ) {
+        controlFan(3, true);
+        responsSuara = "Kipas dihidupkan dengan putaran maksimal.";
+      } else {
+        controlFan(1, true);
+        responsSuara = "Kipas dinyalakan dengan putaran dasar.";
+      }
+    } else if (niatMati || t.includes("mati") || t.includes("0")) {
+      controlFan(0, true);
+      responsSuara = "Kipas telah dimatikan.";
+    } else if (niatCek) {
+      responsSuara =
+        currentFanSpeed <= 0
+          ? "Kipas sedang dalam keadaan mati."
+          : `Kipas menyala pada kecepatan ${currentFanSpeed}.`;
+    } else {
+      responsSuara =
+        "Anda menyebut kipas. Apakah ingin dihidupkan, dimatikan, atau dinaikkan kecepatannya?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+
+  // --- PINTU ---
+  if (targetPintu) {
+    if (niatNyala || t.includes("buka") || t.includes("lepas")) {
+      controlDoor("UNLOCK", true);
+      responsSuara = "Kunci pintu ditarik. Pintu terbuka selama 10 detik.";
+    } else if (
+      niatMati ||
+      t.includes("tutup") ||
+      t.includes("kunci") ||
+      t.includes("amankan")
+    ) {
+      controlDoor("LOCK", true);
+      responsSuara = "Pintu segera dikunci untuk keamanan.";
+    } else if (niatCek) {
+      responsSuara = isDoorLocked
+        ? "Pintu terkunci aman dari luar."
+        : "Peringatan, pintu saat ini sedang terbuka.";
+    } else {
+      responsSuara = "Anda menyebut pintu. Mau dibuka atau dikunci?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+
+  // --- SENSOR KEAMANAN ---
+  if (targetLaser) {
+    if (niatNyala) {
+      toggleSecurity("laser", true, true);
+      responsSuara = "Laser keamanan dipersenjatai.";
+    } else if (niatMati) {
+      toggleSecurity("laser", false, true);
+      responsSuara = "Laser keamanan dinonaktifkan.";
+    } else {
+      responsSuara = "Apakah Anda ingin menghidupkan atau mematikan laser?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+  if (targetGerak) {
+    if (niatNyala) {
+      toggleSecurity("ir", true, true);
+      responsSuara = "Sensor gerak diaktifkan.";
+    } else if (niatMati) {
+      toggleSecurity("ir", false, true);
+      responsSuara = "Sensor gerak dimatikan.";
+    } else {
+      responsSuara = "Radar gerak mau dinyalakan atau dimatikan?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+  if (targetJarak) {
+    if (niatNyala) {
+      toggleSecurity("hc", true, true);
+      responsSuara = "Sensor pemindai jarak objek dihidupkan.";
+    } else if (niatMati) {
+      toggleSecurity("hc", false, true);
+      responsSuara = "Pemindai jarak dimatikan.";
+    } else {
+      responsSuara = "Sensor ultrasonik mau dihidupkan atau dimatikan?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+  if (targetApi) {
+    if (niatNyala) {
+      toggleSecurity("api", true, true);
+      responsSuara = "Sistem pendeteksi kebakaran diaktifkan.";
+    } else if (niatMati) {
+      toggleSecurity("api", false, true);
+      responsSuara = "Pendeteksi api dimatikan. Harap waspada.";
+    } else {
+      responsSuara = "Sensor api mau dinyalakan atau dimatikan?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+
+  // --- MUSIK / YOUTUBE ---
+  if (targetMusik) {
+    if (niatNyala || t.includes("mainkan") || t.includes("dengar")) {
+      let keyword = t
+        .replace(
+          /(tolong|coba|mainkan|putar|nyalakan|dengarkan|lagu|musik|youtube|dari|di)/g,
+          "",
+        )
+        .trim();
+      if (keyword.length > 2) {
+        searchYouTube(keyword);
+        return;
+      } // Bicara di handle oleh searchYouTube
+      if (player && player.playVideo) {
+        player.playVideo();
+        isMusicPlaying = true;
+        pausedByVoice = false;
+        responsSuara = "Memutar pemutar media kembali.";
+      } else {
+        responsSuara = "Sistem audio visual belum siap atau gagal dimuat.";
+        onYouTubeIframeAPIReady();
+      }
+    } else if (
+      niatMati ||
+      t.includes("jeda") ||
+      t.includes("diam") ||
+      t.includes("berhenti")
+    ) {
+      controlMusic("STOP");
+      pausedByVoice = false;
+      responsSuara = "Musik telah dihentikan.";
+    } else if (
+      t.includes("selanjutnya") ||
+      t.includes("ganti") ||
+      t.includes("skip")
+    ) {
+      if (player && player.nextVideo) {
+        player.nextVideo();
+        pausedByVoice = false;
+        isMusicPlaying = true;
+        responsSuara = "Mengganti ke trek musik selanjutnya.";
+      } else {
+        responsSuara = "Pemutar sedang kosong, tidak bisa ganti lagu sekarang.";
+      }
+    } else {
+      responsSuara = "Ada apa dengan pemutar musiknya?";
+    }
+    bicara(responsSuara, tutupMic);
+    return;
+  }
+
+  // --- LAPORAN SENSOR ---
+  if (
+    targetSuhu ||
+    (niatCek && t.includes("ruangan")) ||
+    t.includes("panas gak")
+  ) {
+    const temp = document.getElementById("temp2").innerText;
+    const hum = document.getElementById("hum2").innerText;
+    bicara(
+      `Suhu di ruangan saat ini ${temp} derajat celcius, dengan tingkat kelembaban di ${hum} persen.`,
+      tutupMic,
+    );
+    return;
+  }
+  if (targetCuaca) {
+    const loc = document.getElementById("locName").innerText;
+    const desc = document.getElementById("mainDesc").innerText;
+    const sLuar = document.getElementById("mainTemp").innerText;
+    bicara(
+      `Laporan cuaca untuk ${loc} hari ini kondisinya ${desc} dengan suhu udara luar sekitar ${sLuar}.`,
+      tutupMic,
+    );
+    return;
+  }
+  if (t.includes("laporan keamanan") || t.includes("laporan sistem")) {
     const laser = document.getElementById("toggle-laser").checked
       ? "Aktif"
       : "Mati";
@@ -4671,53 +4967,68 @@ function prosesPerintahSuara(teks) {
       ? "Aktif"
       : "Mati";
     bicara(
-      `Laporan status sensor: Laser ${laser}, Sensor Gerak ${ir}, Sensor Jarak ${hc}, dan Detektor Api ${api}.`,
-      !0,
+      `Rekap keamanan: Laser ${laser}, Radar Gerak ${ir}, Ultrasonik ${hc}, dan Sensor Api ${api}.`,
+      tutupMic,
     );
-  } else if (
-    teks.includes("nyalakan laser") ||
-    teks.includes("aktifkan keamanan")
-  ) {
-    toggleSecurity("laser", !0, !0);
-    bicara("Sistem keamanan laser diaktifkan.", !0);
-  } else if (
-    teks.includes("matikan laser") ||
-    teks.includes("matikan keamanan")
-  ) {
-    toggleSecurity("laser", !1, !0);
-    bicara("Sistem keamanan laser dinonaktifkan.", !0);
-  } else if (teks.includes("hidupkan sensor gerak")) {
-    toggleSecurity("ir", !0, !0);
-    bicara("Sensor gerak aktif.", !0);
-  } else if (teks.includes("matikan sensor gerak")) {
-    toggleSecurity("ir", !1, !0);
-    bicara("Sensor gerak mati.", !0);
-  } else if (teks.includes("hidupkan sensor jarak")) {
-    toggleSecurity("hc", !0, !0);
-    bicara("Sensor jarak aktif.", !0);
-  } else if (teks.includes("matikan sensor jarak")) {
-    toggleSecurity("hc", !1, !0);
-    bicara("Sensor jarak mati.", !0);
-  } else if (teks.includes("hidupkan sensor api")) {
-    toggleSecurity("api", !0, !0);
-    bicara("Detektor api aktif.", !0);
-  } else if (teks.includes("matikan sensor api")) {
-    toggleSecurity("api", !1, !0);
-    bicara("Detektor api mati.", !0);
-  } else if (teks.includes("suhu ruangan") || teks.includes("cek suhu")) {
-    const temp = document.getElementById("temp2").innerText;
-    const hum = document.getElementById("hum2").innerText;
-    bicara(
-      `Suhu ruangan saat ini ${temp} derajat celcius, kelembaban ${hum} persen.`,
-      !0,
-    );
-  } else if (teks.includes("cek cuaca") || teks.includes("info cuaca")) {
-    const lokasi = document.getElementById("locName").innerText;
-    const deskripsi = document.getElementById("mainDesc").innerText;
-    bicara(`Cuaca di ${lokasi} saat ini ${deskripsi}.`, !0);
-  } else {
-    bicara("Maaf, perintah tidak dikenali. Silakan ulangi.", !1);
+    return;
   }
+
+  // --- NAVIGASI HALAMAN ---
+  if (
+    t.includes("pergi ke") ||
+    t.includes("tampilkan") ||
+    t.includes("pindah ke") ||
+    t.includes("lihat")
+  ) {
+    if (targetNavigasi && t.includes("kontrol")) {
+      switchPage(
+        "page-control",
+        document.querySelector(".nav-item:nth-child(4)"),
+      );
+      bicara("Membuka pusat kontrol utama.", tutupMic);
+      return;
+    }
+    if (targetNavigasi && t.includes("wajah")) {
+      switchPage(
+        "page-absensi",
+        document.querySelector(".nav-item:nth-child(2)"),
+      );
+      bicara("Mengaktifkan scan biometrik wajah.", tutupMic);
+      return;
+    }
+    if (targetCctv) {
+      switchPage(
+        "page-youtube",
+        document.querySelector(".nav-item:nth-child(11)"),
+      );
+      bicara("Membuka layar CCTV.", tutupMic);
+      return;
+    }
+    if (targetSuhu) {
+      switchPage(
+        "page-sensor",
+        document.querySelector(".nav-item:nth-child(3)"),
+      );
+      bicara("Membuka grafik monitor suhu.", tutupMic);
+      return;
+    }
+  }
+
+  // ==========================================
+  // 5. JIKA KATA-KATA RANDOM (Gagal Paham)
+  // ==========================================
+  const responBingung = [
+    "Maaf, saya tidak menangkap maksud perintah Anda.",
+    "Perintah tidak jelas, mohon diulangi lagi.",
+    "Saya mendengar Anda bicara, tapi saya bingung. Coba sebutkan dengan spesifik, misalnya 'nyalakan kipas'.",
+    "Apakah Anda menyuruh saya? Coba pakai kata kunci spesifik alatnya.",
+    "Sinyal suara kurang jelas, bisakah Anda menyebutkan nama perangkatnya?",
+  ];
+  let randomRespon =
+    responBingung[Math.floor(Math.random() * responBingung.length)];
+  // Karena tutupMic = false, sistem akan merespon bingung LALU LANGSUNG MENDENGARKAN LAGI
+  // Pastikan selalu ada TTS balasan
+  bicara(randomRespon, tutupMic);
 }
 let currentPin = "";
 const savedPin = "121232";
@@ -6265,11 +6576,20 @@ document.addEventListener(
             "pushNotificationReceived",
             (notification) => {
               console.log("🔔 Notifikasi Masuk:", notification);
-              showInfoModal(
-                notification.title || "Info",
-                notification.body || "Pesan baru",
-                "alarm",
-              );
+              // Persist and render notification in-app
+              try {
+                const title =
+                  notification.title || notification.data?.title || "Info";
+                const body =
+                  notification.body || notification.data?.body || "Pesan baru";
+                const data = notification.data || {};
+                addNotification({ title, message: body, data });
+
+                // also show transient info modal for immediate feedback
+                showInfoModal(title, body, "alarm");
+              } catch (e) {
+                console.error("Error handling push notification:", e);
+              }
 
               // Bunyikan suara sirine di HP lewat JS (Opsional)
               if (typeof playSiren === "function") playSiren();
@@ -6310,6 +6630,182 @@ function applyGlobalAnimation(selector, initialDelay = 0.1) {
     count++;
   });
 }
+
+// -----------------------------
+// Notifications: persistence & UI
+// -----------------------------
+
+function _getStoredNotifications() {
+  try {
+    const raw = localStorage.getItem("app_notifications");
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error("Failed to read notifications from storage:", e);
+    return [];
+  }
+}
+
+function _saveStoredNotifications(arr) {
+  try {
+    localStorage.setItem("app_notifications", JSON.stringify(arr));
+    _updateNotifBadges();
+  } catch (e) {
+    console.error("Failed to save notifications:", e);
+  }
+}
+
+function addNotification({ title, message, data = {} }) {
+  const arr = _getStoredNotifications();
+  const id = Date.now();
+  const item = {
+    id,
+    title: title || "Info",
+    message: message || "",
+    data: data || {},
+    ts: new Date().toISOString(),
+    read: false,
+  };
+  arr.unshift(item); // newest first
+  _saveStoredNotifications(arr);
+  renderNotificationPopup();
+  return item;
+}
+
+function renderNotificationPopup() {
+  const list = document.getElementById("notif-list");
+  if (!list) return;
+  const arr = _getStoredNotifications();
+  list.innerHTML = "";
+  if (arr.length === 0) {
+    list.innerHTML = `<div class=\"p-4 text-sm text-slate-300\">Belum ada notifikasi</div>`;
+    _updateNotifBadges();
+    return;
+  }
+
+  for (const n of arr) {
+    const el = document.createElement("div");
+    el.className =
+      "notif-item p-3 rounded-lg mb-3 cursor-pointer bg-slate-700/40 hover:bg-slate-700 transition flex items-start gap-3";
+    if (!n.read) el.classList.add("ring-1", "ring-emerald-500/30");
+    el.dataset.notifId = n.id;
+    el.innerHTML = `
+      <div class=\"flex-1\">
+        <div class=\"flex justify-between items-start gap-3\">
+          <div>
+            <div class=\"font-bold text-white\">${escapeHtml(n.title)}</div>
+            <div class=\"text-slate-300 text-sm mt-1\">${escapeHtml(n.message)}</div>
+          </div>
+          <div class=\"text-xs text-slate-400\">${new Date(n.ts).toLocaleString()}</div>
+        </div>
+      </div>
+    `;
+    el.onclick = () => selectNotification(n.id);
+    list.appendChild(el);
+  }
+  _updateNotifBadges();
+}
+
+function openNotificationModal() {
+  const modal = document.getElementById("modal-notif");
+  const inner = document.getElementById("notif-inner-box");
+  if (!modal || !inner) return;
+  renderNotificationPopup();
+  modal.classList.remove("hidden");
+  setTimeout(() => {
+    inner.classList.remove("scale-95", "opacity-0");
+  }, 20);
+}
+
+function closeNotificationModal() {
+  const modal = document.getElementById("modal-notif");
+  const inner = document.getElementById("notif-inner-box");
+  if (!modal || !inner) return;
+  inner.classList.add("scale-95", "opacity-0");
+  setTimeout(() => modal.classList.add("hidden"), 200);
+}
+
+function selectNotification(id) {
+  const arr = _getStoredNotifications();
+  const idx = arr.findIndex((x) => x.id === id || x.id === Number(id));
+  if (idx === -1) return;
+  const n = arr[idx];
+  // mark as read
+  n.read = true;
+  arr[idx] = n;
+  _saveStoredNotifications(arr);
+  renderNotificationPopup();
+
+  // show detail or perform action (for now show modal)
+  showInfoModal(n.title, n.message, "alarm");
+}
+
+function clearNotifications() {
+  localStorage.removeItem("app_notifications");
+  renderNotificationPopup();
+}
+
+function toggleAllNotif(checkbox) {
+  const arr = _getStoredNotifications();
+  if (!arr || arr.length === 0) return;
+  if (checkbox.checked) {
+    // mark all
+    for (const n of arr) n.read = true;
+  } else {
+    for (const n of arr) n.read = false;
+  }
+  _saveStoredNotifications(arr);
+  renderNotificationPopup();
+}
+
+function _updateNotifBadges() {
+  const arr = _getStoredNotifications();
+  const unread = arr.filter((x) => !x.read).length;
+  const badge = document.getElementById("notif-badge");
+  const mobileBadge = document.getElementById("mobile-notif-badge");
+  if (badge) badge.textContent = unread > 0 ? String(unread) : "";
+  if (mobileBadge) mobileBadge.textContent = unread > 0 ? String(unread) : "";
+}
+
+// safe html esc
+function escapeHtml(s) {
+  if (!s) return "";
+  return String(s).replace(/[&<>\"']/g, function (c) {
+    return {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;",
+    }[c];
+  });
+}
+
+// Handler called from native when notification PendingIntent is clicked
+window.__openNativeNotification = function (json) {
+  try {
+    // accept either object or JSON string
+    let payload = json;
+    if (typeof json === "string") payload = JSON.parse(json);
+    const item = addNotification({
+      title: payload.title || payload.title,
+      message: payload.message || payload.body || "",
+      data: payload.data || {},
+    });
+    openNotificationModal();
+    // select after a short delay to allow modal to render
+    setTimeout(() => selectNotification(item.id), 250);
+  } catch (e) {
+    console.error("__openNativeNotification error", e, json);
+  }
+};
+
+// initialize badges on load
+window.addEventListener("load", () => {
+  try {
+    _updateNotifBadges();
+  } catch (e) {}
+});
 
 // [FUNGSI BARU] GANTI SISI KAMERA
 async function switchCameraFacing(mode = "face") {
