@@ -1,4 +1,3 @@
-````markdown
 # 📱 Smart Dashboard IoT - Android Native Wrapper
 
 Aplikasi Android cerdas berbasis WebView (Native Wrapper) yang dirancang khusus untuk mengontrol perangkat IoT ESP8266 secara komprehensif. Aplikasi ini mendukung fungsionalitas tingkat lanjut seperti pemantauan sensor _real-time_, eksekusi sistem otomasi rumah pintar, notifikasi _native_, sinkronisasi Jadwal Sholat presisi berbasis koordinat satelit (GPS), dan penguncian Pintu Otomatis (Face API & RFID).
@@ -13,17 +12,16 @@ Untuk memulai pengembangan atau sekadar memindahkan _project_ ini ke komputer ba
 2. Klik kanan pada area kosong di dalam folder tersebut, lalu pilih **Open in Terminal** (atau Git Bash Here).
 3. Eksekusi perintah kloning berikut untuk mengunduh seluruh _source code_:
 
-```powershell
+````powershell
    git clone [URL_GITHUB_PROJECT_KAMU]
-```
-````
+
 
 4. Setelah proses unduhan selesai, masuk ke dalam direktori _project_ yang baru saja dibuat:
 
 ```powershell
    cd apkiotdashboard
 
-```
+````
 
 5. Buka _project_ tersebut langsung di Visual Studio Code dengan perintah:
 
@@ -179,7 +177,3 @@ Sistem Kontrol Versi bawaan (Git engine) selalu beroperasi memindai dan melacak 
 ```
 
 *(Catatan Kompatibilitas Penting: Apabila infrastruktur penamaan *branch* dasar repositori GitHub Anda masih menggunakan nomenklatur format inisialisasi Git gaya lama, modifikasi dan ganti parameter akhir leksikal `main` menjadi representasi `master` pada baris komando transmisi di atas).*
-
-```
-
-```
